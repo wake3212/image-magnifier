@@ -42,8 +42,28 @@ export function ImageMagnifierTool() {
       }
     }
 
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (file) {
+            handleImageUpload(file)
+          }
+          return
+        }
+      }
+    }
+
     window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
+    window.addEventListener("paste", handlePaste)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("paste", handlePaste)
+    }
   }, [selectedMagnifier])
 
   const drawCanvas = useCallback(() => {
