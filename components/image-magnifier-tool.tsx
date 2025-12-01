@@ -359,18 +359,6 @@ export function ImageMagnifierTool() {
   const handleMouseDown = (e: React.MouseEvent) => {
     const { x, y } = getCanvasCoords(e)
 
-    // Check for double-click on text to edit
-    if (e.detail === 2) {
-      for (let i = textAnnotations.length - 1; i >= 0; i--) {
-        if (isOnTextAnnotation(x, y, textAnnotations[i])) {
-          setEditingTextId(textAnnotations[i].id)
-          setSelectedText(textAnnotations[i].id)
-          setSelectedMagnifier(null)
-          return
-        }
-      }
-    }
-
     if (selectedMagnifier) {
       const selected = magnifiers.find((m) => m.id === selectedMagnifier)
       if (selected && isOnResizeHandle(x, y, selected)) {
@@ -772,6 +760,27 @@ export function ImageMagnifierTool() {
 
   const textColors = ["#ffffff", "#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#a855f7"]
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const { x, y } = getCanvasCoords(e)
+
+    for (let i = textAnnotations.length - 1; i >= 0; i--) {
+      if (isOnTextAnnotation(x, y, textAnnotations[i])) {
+        setEditingTextId(textAnnotations[i].id)
+        setSelectedText(textAnnotations[i].id)
+        setSelectedMagnifier(null)
+        setIsDraggingText(false)
+        return
+      }
+    }
+  }
+
+  const getCursor = () => {
+    if (isDragging) return "move"
+    if (isResizing) return "nwse-resize"
+    if (isDraggingText) return "move"
+    return "default"
+  }
+
   return (
     <div
       className="min-h-screen bg-neutral-100 flex items-center justify-center p-4 md:p-8"
@@ -997,7 +1006,9 @@ export function ImageMagnifierTool() {
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className="block rounded-lg shadow-2xl touch-none"
+            onDoubleClick={handleDoubleClick}
+            className="block rounded-lg shadow-2xl touch-none max-w-full max-h-full object-contain border border-gray-200 dark:border-gray-800"
+            style={{ cursor: getCursor() }}
             tabIndex={0}
           />
 
@@ -1060,7 +1071,7 @@ export function ImageMagnifierTool() {
                         setEditingTextId(null)
                       }
                     }}
-                    className="bg-transparent border-2 border-blue-500 rounded px-1 outline-none resize-none"
+                    className="bg-transparent border border-blue-500 rounded px-1 outline-none resize-none"
                     style={{
                       fontSize: `${pos.fontSize}px`,
                       fontWeight: 600,
