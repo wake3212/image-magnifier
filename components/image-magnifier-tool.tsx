@@ -612,7 +612,7 @@ export function ImageMagnifierTool() {
                 >
                   Shu Ding
                 </a>{" "}
-                using{" "}
+                and{" "}
                 <a
                   href="https://v0.dev"
                   target="_blank"
@@ -656,7 +656,7 @@ export function ImageMagnifierTool() {
             >
               Shu Ding
             </a>{" "}
-            using{" "}
+            and{" "}
             <a
               href="https://v0.dev"
               target="_blank"
