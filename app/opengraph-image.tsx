@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og"
-
-export const runtime = "edge"
+import { readFile } from "fs/promises"
+import { join } from "path"
 
 export const alt = "Image Magnifier Tool"
 export const size = {
@@ -10,7 +10,7 @@ export const size = {
 export const contentType = "image/png"
 
 export default async function Image() {
-  const geistFont = await fetch(new URL("/images/geist-regular.ttf")).then((res) => res.arrayBuffer())
+  const geistFont = await readFile(join(process.cwd(), "public/images/geist-regular.ttf"))
 
   return new ImageResponse(
     <div
