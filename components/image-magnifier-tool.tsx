@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { Upload, Download, Copy, Trash2, Check, Menu, X, Circle, Square } from "lucide-react"
+import { Upload, Download, Copy, Trash2, Check, Menu, X, Circle, Square, Sun, Moon } from "lucide-react"
 
 interface Magnifier {
   id: string
@@ -786,6 +786,8 @@ export function ImageMagnifierTool() {
       if (!blob) return
       try {
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
       } catch {
         // Clipboard write failed silently
       }
@@ -839,10 +841,11 @@ export function ImageMagnifierTool() {
             <div className="flex gap-2 mb-3">
               <Button onClick={() => addMagnifier("circle")} size="sm" className="flex-1 gap-1.5 h-8 text-xs">
                 <Circle className="h-3.5 w-3.5" />
-                Circle
+                New Circle
               </Button>
               <Button onClick={() => addMagnifier("rectangle")} size="sm" className="flex-1 gap-1.5 h-8 text-xs">
-                □ Rectangle
+                <Square className="h-3.5 w-3.5" />
+                New Rectangle
               </Button>
             </div>
 
@@ -1022,13 +1025,25 @@ export function ImageMagnifierTool() {
                       boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)",
                     }}
                   >
+                    <button
+                      onClick={() => setDarkBorder(!darkBorder)}
+                      className="flex items-center justify-center w-5 h-5 rounded-full hover:bg-neutral-200 transition-colors"
+                      title={darkBorder ? "Switch to light border" : "Switch to dark border"}
+                    >
+                      {darkBorder ? (
+                        <Moon className="h-3 w-3 text-neutral-600" />
+                      ) : (
+                        <Sun className="h-3 w-3 text-neutral-500" />
+                      )}
+                    </button>
+                    <div className="w-px h-3 bg-neutral-300" />
                     <Slider
                       value={[selectedMag.zoom]}
                       onValueChange={([v]) => updateSelectedZoom(v)}
                       min={1}
                       max={5}
                       step={0.1}
-                      className="flex-1 h-1"
+                      className="flex-1 h-1 w-16"
                     />
                     <span className="text-[10px] font-medium text-neutral-500 w-6 text-right tabular-nums">
                       {selectedMag.zoom.toFixed(1)}x
@@ -1045,15 +1060,6 @@ export function ImageMagnifierTool() {
               </span>
             </div>
           )}
-
-          <Button
-            variant={darkBorder ? "default" : "outline"}
-            size="sm"
-            onClick={() => setDarkBorder(!darkBorder)}
-            className="fixed bottom-4 left-4 z-50 h-8 text-xs"
-          >
-            {darkBorder ? "Dark Border" : "Light Border"}
-          </Button>
         </div>
       )}
     </div>
