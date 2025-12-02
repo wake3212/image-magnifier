@@ -28,6 +28,17 @@ export function ImageMagnifierTool() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [canvasDisplaySize, setCanvasDisplaySize] = useState({ width: 0, height: 0 })
   const [isPanelOpen, setIsPanelOpen] = useState(false)
+  const [darkBorder, setDarkBorder] = useState(false)
+  const [dragState, setDragState] = useState<{
+    x: number
+    y: number
+    initialX: number
+    initialY: number
+    initialWidth: number
+    initialHeight: number
+    initialRadius: number
+    shape: "circle" | "rectangle"
+  } | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -144,7 +155,8 @@ export function ImageMagnifierTool() {
       ctx.shadowBlur = 15
       ctx.shadowOffsetX = 0
       ctx.shadowOffsetY = 4
-      ctx.strokeStyle = selectedMagnifier === mag.id ? "#3b82f6" : "rgba(255, 255, 255, 0.8)"
+      ctx.strokeStyle =
+        selectedMagnifier === mag.id ? "#3b82f6" : darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
       ctx.lineWidth = selectedMagnifier === mag.id ? 3 : 2
       ctx.stroke()
       ctx.restore()
@@ -157,7 +169,7 @@ export function ImageMagnifierTool() {
       } else {
         ctx.arc(mag.x, mag.y, mag.radius + 1, 0, Math.PI * 2)
       }
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.4)"
+      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
       ctx.lineWidth = 1
       ctx.stroke()
 
@@ -179,7 +191,7 @@ export function ImageMagnifierTool() {
         ctx.stroke()
       }
     })
-  }, [image, magnifiers, selectedMagnifier, canvasDisplaySize])
+  }, [image, magnifiers, selectedMagnifier, canvasDisplaySize, darkBorder])
 
   useEffect(() => {
     drawCanvas()
@@ -338,6 +350,16 @@ export function ImageMagnifierTool() {
       const selected = magnifiers.find((m) => m.id === selectedMagnifier)
       if (selected && isOnResizeHandle(x, y, selected)) {
         setIsResizing(true)
+        setDragState({
+          x,
+          y,
+          initialX: selected.x,
+          initialY: selected.y,
+          initialWidth: selected.width,
+          initialHeight: selected.height,
+          initialRadius: selected.radius,
+          shape: selected.shape,
+        })
         return
       }
     }
@@ -348,6 +370,16 @@ export function ImageMagnifierTool() {
         setSelectedMagnifier(mag.id)
         setIsDragging(true)
         setDragOffset({ x: x - mag.x, y: y - mag.y })
+        setDragState({
+          x,
+          y,
+          initialX: mag.x,
+          initialY: mag.y,
+          initialWidth: mag.width,
+          initialHeight: mag.height,
+          initialRadius: mag.radius,
+          shape: mag.shape,
+        })
         return
       }
     }
@@ -363,6 +395,16 @@ export function ImageMagnifierTool() {
       const selected = magnifiers.find((m) => m.id === selectedMagnifier)
       if (selected && isOnResizeHandle(x, y, selected)) {
         setIsResizing(true)
+        setDragState({
+          x,
+          y,
+          initialX: selected.x,
+          initialY: selected.y,
+          initialWidth: selected.width,
+          initialHeight: selected.height,
+          initialRadius: selected.radius,
+          shape: selected.shape,
+        })
         e.preventDefault()
         return
       }
@@ -374,6 +416,16 @@ export function ImageMagnifierTool() {
         setSelectedMagnifier(mag.id)
         setIsDragging(true)
         setDragOffset({ x: x - mag.x, y: y - mag.y })
+        setDragState({
+          x,
+          y,
+          initialX: mag.x,
+          initialY: mag.y,
+          initialWidth: mag.width,
+          initialHeight: mag.height,
+          initialRadius: mag.radius,
+          shape: mag.shape,
+        })
         e.preventDefault()
         return
       }
@@ -391,16 +443,16 @@ export function ImageMagnifierTool() {
       )
     }
 
-    if (isResizing && selectedMagnifier) {
+    if (isResizing && selectedMagnifier && dragState) {
       setMagnifiers((prev) =>
         prev.map((mag) => {
           if (mag.id === selectedMagnifier) {
             if (mag.shape === "rectangle") {
-              const newWidth = Math.max(60, Math.min(400, (x - mag.x) * 2))
-              const newHeight = Math.max(60, Math.min(400, (y - mag.y) * 2))
+              const newWidth = Math.max(60, Math.min(400, (x - dragState.initialX) * 2))
+              const newHeight = Math.max(60, Math.min(400, (y - dragState.initialY) * 2))
               return { ...mag, width: newWidth, height: newHeight }
             } else {
-              const dist = Math.sqrt((x - mag.x) ** 2 + (y - mag.y) ** 2)
+              const dist = Math.sqrt((x - dragState.initialX) ** 2 + (y - dragState.initialY) ** 2)
               return { ...mag, radius: Math.max(30, Math.min(200, dist)) }
             }
           }
@@ -439,17 +491,17 @@ export function ImageMagnifierTool() {
       )
     }
 
-    if (isResizing && selectedMagnifier) {
+    if (isResizing && selectedMagnifier && dragState) {
       e.preventDefault()
       setMagnifiers((prev) =>
         prev.map((mag) => {
           if (mag.id === selectedMagnifier) {
             if (mag.shape === "rectangle") {
-              const newWidth = Math.max(60, Math.min(400, (x - mag.x) * 2))
-              const newHeight = Math.max(60, Math.min(400, (y - mag.y) * 2))
+              const newWidth = Math.max(60, Math.min(400, (x - dragState.initialX) * 2))
+              const newHeight = Math.max(60, Math.min(400, (y - dragState.initialY) * 2))
               return { ...mag, width: newWidth, height: newHeight }
             } else {
-              const dist = Math.sqrt((x - mag.x) ** 2 + (y - mag.y) ** 2)
+              const dist = Math.sqrt((x - dragState.initialX) ** 2 + (y - dragState.initialY) ** 2)
               return { ...mag, radius: Math.max(30, Math.min(200, dist)) }
             }
           }
@@ -462,11 +514,13 @@ export function ImageMagnifierTool() {
   const handleMouseUp = () => {
     setIsDragging(false)
     setIsResizing(false)
+    setDragState(null)
   }
 
   const handleTouchEnd = () => {
     setIsDragging(false)
     setIsResizing(false)
+    setDragState(null)
   }
 
   const updateSelectedZoom = (zoom: number) => {
@@ -496,16 +550,18 @@ export function ImageMagnifierTool() {
     )
   }
 
-  const downloadImage = () => {
+  const downloadImage = useCallback(async () => {
     if (!image) return
 
-    const tempCanvas = document.createElement("canvas")
-    tempCanvas.width = image.naturalWidth
-    tempCanvas.height = image.naturalHeight
-    const ctx = tempCanvas.getContext("2d")
+    const dpr = 2
+    const exportCanvas = document.createElement("canvas")
+    exportCanvas.width = image.naturalWidth * dpr
+    exportCanvas.height = image.naturalHeight * dpr
+    const ctx = exportCanvas.getContext("2d")
     if (!ctx) return
 
-    ctx.drawImage(image, 0, 0, tempCanvas.width, tempCanvas.height)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight)
 
     const scaleX = image.naturalWidth / canvasDisplaySize.width
     const scaleY = image.naturalHeight / canvasDisplaySize.height
@@ -513,20 +569,30 @@ export function ImageMagnifierTool() {
     magnifiers.forEach((mag) => {
       const scaledX = mag.x * scaleX
       const scaledY = mag.y * scaleY
+      const scaledRadius = mag.radius * Math.min(scaleX, scaleY)
+      const scaledWidth = mag.width * scaleX
+      const scaledHeight = mag.height * scaleY
+
+      ctx.save()
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2
+        const halfHeight = scaledHeight / 2
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          scaledWidth,
+          scaledHeight,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
+      }
+      ctx.clip()
 
       if (mag.shape === "rectangle") {
-        const scaledWidth = mag.width * scaleX
-        const scaledHeight = mag.height * scaleY
-        const cornerRadius = 8 * Math.min(scaleX, scaleY)
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.roundRect(scaledX - scaledWidth / 2, scaledY - scaledHeight / 2, scaledWidth, scaledHeight, cornerRadius)
-        ctx.clip()
-
-        const zoomWidth = (mag.width / 2 / mag.zoom) * scaleX
-        const zoomHeight = (mag.height / 2 / mag.zoom) * scaleY
-
+        const zoomWidth = scaledWidth / 2 / mag.zoom
+        const zoomHeight = scaledHeight / 2 / mag.zoom
         ctx.drawImage(
           image,
           scaledX - zoomWidth,
@@ -538,37 +604,8 @@ export function ImageMagnifierTool() {
           scaledWidth,
           scaledHeight,
         )
-        ctx.restore()
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.roundRect(scaledX - scaledWidth / 2, scaledY - scaledHeight / 2, scaledWidth, scaledHeight, cornerRadius)
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        const outerWidth = scaledWidth / 2 + 1
-        const outerHeight = scaledHeight / 2 + 1
-        ctx.roundRect(scaledX - outerWidth, scaledY - outerHeight, outerWidth * 2, outerHeight * 2, cornerRadius)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
-        ctx.stroke()
       } else {
-        const scaledRadius = mag.radius * Math.min(scaleX, scaleY)
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        ctx.clip()
-
         const zoomRadius = scaledRadius / mag.zoom
-
         ctx.drawImage(
           image,
           scaledX - zoomRadius,
@@ -580,44 +617,70 @@ export function ImageMagnifierTool() {
           scaledRadius * 2,
           scaledRadius * 2,
         )
-        ctx.restore()
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
-        ctx.stroke()
       }
+      ctx.restore()
+
+      ctx.save()
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2
+        const halfHeight = scaledHeight / 2
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          scaledWidth,
+          scaledHeight,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
+      }
+      ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
+      ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
+      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+      ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
+      ctx.stroke()
+      ctx.restore()
+
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2 + 1
+        const halfHeight = scaledHeight / 2 + 1
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          halfWidth * 2,
+          halfHeight * 2,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
+      }
+      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+      ctx.lineWidth = 1
+      ctx.stroke()
     })
 
     const link = document.createElement("a")
     link.download = "magnified-image.png"
-    link.href = tempCanvas.toDataURL("image/png")
+    link.href = exportCanvas.toDataURL("image/png")
     link.click()
-  }
+  }, [image, magnifiers, canvasDisplaySize, darkBorder])
 
-  const copyImage = async () => {
+  const copyImage = useCallback(async () => {
     if (!image) return
 
-    const tempCanvas = document.createElement("canvas")
-    tempCanvas.width = image.naturalWidth
-    tempCanvas.height = image.naturalHeight
-    const ctx = tempCanvas.getContext("2d")
+    const dpr = 2
+    const exportCanvas = document.createElement("canvas")
+    exportCanvas.width = image.naturalWidth * dpr
+    exportCanvas.height = image.naturalHeight * dpr
+    const ctx = exportCanvas.getContext("2d")
     if (!ctx) return
 
-    ctx.drawImage(image, 0, 0, tempCanvas.width, tempCanvas.height)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight)
 
     const scaleX = image.naturalWidth / canvasDisplaySize.width
     const scaleY = image.naturalHeight / canvasDisplaySize.height
@@ -625,20 +688,30 @@ export function ImageMagnifierTool() {
     magnifiers.forEach((mag) => {
       const scaledX = mag.x * scaleX
       const scaledY = mag.y * scaleY
+      const scaledRadius = mag.radius * Math.min(scaleX, scaleY)
+      const scaledWidth = mag.width * scaleX
+      const scaledHeight = mag.height * scaleY
+
+      ctx.save()
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2
+        const halfHeight = scaledHeight / 2
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          scaledWidth,
+          scaledHeight,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
+      }
+      ctx.clip()
 
       if (mag.shape === "rectangle") {
-        const scaledWidth = mag.width * scaleX
-        const scaledHeight = mag.height * scaleY
-        const cornerRadius = 8 * Math.min(scaleX, scaleY)
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.roundRect(scaledX - scaledWidth / 2, scaledY - scaledHeight / 2, scaledWidth, scaledHeight, cornerRadius)
-        ctx.clip()
-
-        const zoomWidth = (mag.width / 2 / mag.zoom) * scaleX
-        const zoomHeight = (mag.height / 2 / mag.zoom) * scaleY
-
+        const zoomWidth = scaledWidth / 2 / mag.zoom
+        const zoomHeight = scaledHeight / 2 / mag.zoom
         ctx.drawImage(
           image,
           scaledX - zoomWidth,
@@ -650,37 +723,8 @@ export function ImageMagnifierTool() {
           scaledWidth,
           scaledHeight,
         )
-        ctx.restore()
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.roundRect(scaledX - scaledWidth / 2, scaledY - scaledHeight / 2, scaledWidth, scaledHeight, cornerRadius)
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        const outerWidth = scaledWidth / 2 + 1
-        const outerHeight = scaledHeight / 2 + 1
-        ctx.roundRect(scaledX - outerWidth, scaledY - outerHeight, outerWidth * 2, outerHeight * 2, cornerRadius)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
-        ctx.stroke()
       } else {
-        const scaledRadius = mag.radius * Math.min(scaleX, scaleY)
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        ctx.clip()
-
         const zoomRadius = scaledRadius / mag.zoom
-
         ctx.drawImage(
           image,
           scaledX - zoomRadius,
@@ -692,43 +736,61 @@ export function ImageMagnifierTool() {
           scaledRadius * 2,
           scaledRadius * 2,
         )
-        ctx.restore()
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
-        ctx.stroke()
       }
+      ctx.restore()
+
+      ctx.save()
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2
+        const halfHeight = scaledHeight / 2
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          scaledWidth,
+          scaledHeight,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
+      }
+      ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
+      ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
+      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+      ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
+      ctx.stroke()
+      ctx.restore()
+
+      ctx.beginPath()
+      if (mag.shape === "rectangle") {
+        const halfWidth = scaledWidth / 2 + 1
+        const halfHeight = scaledHeight / 2 + 1
+        ctx.roundRect(
+          scaledX - halfWidth,
+          scaledY - halfHeight,
+          halfWidth * 2,
+          halfHeight * 2,
+          8 * Math.min(scaleX, scaleY),
+        )
+      } else {
+        ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
+      }
+      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+      ctx.lineWidth = 1
+      ctx.stroke()
     })
 
-    try {
-      const item = new ClipboardItem({
-        "image/png": new Promise((resolve) => {
-          tempCanvas.toBlob((blob) => {
-            resolve(blob!)
-          }, "image/png")
-        }),
-      })
-      await navigator.clipboard.write([item])
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error("Failed to copy image:", err)
-    }
-  }
+    exportCanvas.toBlob(async (blob) => {
+      if (!blob) return
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+      } catch {
+        // Clipboard write failed silently
+      }
+    }, "image/png")
+  }, [image, magnifiers, canvasDisplaySize, darkBorder])
 
   const selectedMag = magnifiers.find((m) => m.id === selectedMagnifier)
 
@@ -780,8 +842,7 @@ export function ImageMagnifierTool() {
                 Circle
               </Button>
               <Button onClick={() => addMagnifier("rectangle")} size="sm" className="flex-1 gap-1.5 h-8 text-xs">
-                <Square className="h-3.5 w-3.5" />
-                Rectangle
+                □ Rectangle
               </Button>
             </div>
 
@@ -950,7 +1011,7 @@ export function ImageMagnifierTool() {
                   className="absolute pointer-events-auto z-10"
                   style={{
                     left: `${pos.x}px`,
-                    top: `${pos.y + (selectedMag.shape === "rectangle" ? selectedMag.height : pos.radius) + 8}px`,
+                    top: `${pos.y + (selectedMag.shape === "rectangle" ? selectedMag.height / 2 : pos.radius) + 8}px`,
                     transform: "translateX(-50%)",
                   }}
                 >
@@ -984,6 +1045,15 @@ export function ImageMagnifierTool() {
               </span>
             </div>
           )}
+
+          <Button
+            variant={darkBorder ? "default" : "outline"}
+            size="sm"
+            onClick={() => setDarkBorder(!darkBorder)}
+            className="fixed bottom-4 left-4 z-50 h-8 text-xs"
+          >
+            {darkBorder ? "Dark Border" : "Light Border"}
+          </Button>
         </div>
       )}
     </div>
