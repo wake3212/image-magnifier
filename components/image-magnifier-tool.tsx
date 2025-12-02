@@ -950,7 +950,7 @@ export function ImageMagnifierTool() {
                   className="absolute pointer-events-auto z-10"
                   style={{
                     left: `${pos.x}px`,
-                    top: `${pos.y + pos.radius + 8}px`,
+                    top: `${pos.y + (selectedMag.shape === "rectangle" ? selectedMag.height : pos.radius) + 8}px`,
                     transform: "translateX(-50%)",
                   }}
                 >
