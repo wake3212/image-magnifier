@@ -1019,7 +1019,7 @@ export function ImageMagnifierTool() {
                   }}
                 >
                   <div
-                    className="bg-white/70 backdrop-blur-sm rounded-full p-1.5 flex items-center gap-1.5"
+                    className="bg-white/70 backdrop-blur-sm rounded-full p-1.5 flex items-center gap-1.5 pr-2 pt-1.5"
                     style={{
                       width: "180px",
                       boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)",
@@ -1036,7 +1036,7 @@ export function ImageMagnifierTool() {
                         <Sun className="h-3 w-3 text-neutral-500" />
                       )}
                     </button>
-                    <div className="w-px h-3 bg-neutral-300" />
+                    <div className="w-px h-3 bg-neutral-200 ml-0 mr-1" />
                     <Slider
                       value={[selectedMag.zoom]}
                       onValueChange={([v]) => updateSelectedZoom(v)}
