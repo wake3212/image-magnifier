@@ -975,8 +975,7 @@ export function ImageMagnifierTool() {
               const pos = getMagnifierScreenPosition(mag)
               const isSelected = selectedMagnifier === mag.id
               if (!isSelected) return null
-              const scale = window.devicePixelRatio || 1
-              const offsetY = mag.shape === "rectangle" ? (mag.height / 2) * scale : pos.radius
+              const offsetY = mag.shape === "rectangle" ? mag.height / 2 : pos.radius
               return (
                 <div
                   key={mag.id}
