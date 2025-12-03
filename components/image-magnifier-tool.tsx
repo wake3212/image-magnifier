@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Download, Copy, Trash2, Check, Circle, Square, Sun, Moon } from "lucide-react"
+import { Upload, Download, Copy, Trash2, Check, Circle, Square, Sun, Moon, Plus } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
 
 interface Magnifier {
@@ -19,10 +19,21 @@ interface Magnifier {
   darkBorder: boolean
 }
 
+interface BlurRegion {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  blurAmount: number
+}
+
 export function ImageMagnifierTool() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [magnifiers, setMagnifiers] = useState<Magnifier[]>([])
+  const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([])
   const [selectedMagnifier, setSelectedMagnifier] = useState<string | null>(null)
+  const [selectedBlurRegion, setSelectedBlurRegion] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
@@ -48,51 +59,70 @@ export function ImageMagnifierTool() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.key === "Delete" || e.key === "Backspace") && selectedMagnifier) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-          return
-        }
         e.preventDefault()
-        setMagnifiers((prev) => prev.filter((mag) => mag.id !== selectedMagnifier))
+        setMagnifiers((prev) => prev.filter((m) => m.id !== selectedMagnifier))
         setSelectedMagnifier(null)
       }
-    }
-
-    const handlePaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          e.preventDefault()
-          const file = item.getAsFile()
-          if (file) {
-            handleImageUpload(file)
-          }
-          return
-        }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedBlurRegion) {
+        e.preventDefault()
+        setBlurRegions((prev) => prev.filter((b) => b.id !== selectedBlurRegion))
+        setSelectedBlurRegion(null)
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
-    window.addEventListener("paste", handlePaste)
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown)
-      window.removeEventListener("paste", handlePaste)
-    }
-  }, [selectedMagnifier])
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [selectedMagnifier, selectedBlurRegion])
 
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !image || canvasDisplaySize.width === 0) return
+    if (!canvas || !image) return
 
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const dpr = window.devicePixelRatio || 1
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(image, 0, 0)
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, canvasDisplaySize.width, canvasDisplaySize.height)
-    ctx.drawImage(image, 0, 0, canvasDisplaySize.width, canvasDisplaySize.height)
+    blurRegions.forEach((region) => {
+      const halfWidth = region.width / 2
+      const halfHeight = region.height / 2
+      const x = region.x - halfWidth
+      const y = region.y - halfHeight
+
+      const tempCanvas = document.createElement("canvas")
+      tempCanvas.width = region.width
+      tempCanvas.height = region.height
+      const tempCtx = tempCanvas.getContext("2d")
+      if (!tempCtx) return
+
+      tempCtx.drawImage(canvas, x, y, region.width, region.height, 0, 0, region.width, region.height)
+
+      ctx.save()
+      ctx.filter = `blur(${region.blurAmount}px)`
+      ctx.drawImage(tempCanvas, x, y)
+      ctx.restore()
+
+      if (selectedBlurRegion === region.id) {
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(x - 4, y - 4, region.width + 8, region.height + 8, 6)
+        ctx.strokeStyle = "#3b82f6"
+        ctx.lineWidth = 1
+        ctx.stroke()
+        ctx.restore()
+
+        const handleX = region.x + halfWidth + 4
+        const handleY = region.y + halfHeight + 4
+        ctx.beginPath()
+        ctx.arc(handleX, handleY, 8, 0, Math.PI * 2)
+        ctx.fillStyle = "#3b82f6"
+        ctx.fill()
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
+    })
 
     magnifiers.forEach((mag) => {
       ctx.save()
@@ -184,7 +214,7 @@ export function ImageMagnifierTool() {
           ctx.arc(mag.x, mag.y, mag.radius + 4, 0, Math.PI * 2)
         }
         ctx.strokeStyle = "#3b82f6"
-        ctx.lineWidth = 2
+        ctx.lineWidth = 1
         ctx.stroke()
         ctx.restore()
 
@@ -206,7 +236,7 @@ export function ImageMagnifierTool() {
         ctx.stroke()
       }
     })
-  }, [image, magnifiers, selectedMagnifier, canvasDisplaySize])
+  }, [image, magnifiers, blurRegions, selectedMagnifier, selectedBlurRegion, canvasDisplaySize])
 
   useEffect(() => {
     drawCanvas()
@@ -256,6 +286,8 @@ export function ImageMagnifierTool() {
       img.onload = () => {
         setMagnifiers([])
         setSelectedMagnifier(null)
+        setBlurRegions([])
+        setSelectedBlurRegion(null)
         setCanvasDisplaySize({ width: 0, height: 0 })
         setImage(img)
       }
@@ -309,7 +341,25 @@ export function ImageMagnifierTool() {
     }
     setMagnifiers([...magnifiers, newMagnifier])
     setSelectedMagnifier(newMagnifier.id)
+    setSelectedBlurRegion(null)
   }
+
+  const addBlurRegion = useCallback(() => {
+    if (!image || !canvasRef.current) return
+
+    const canvas = canvasRef.current
+    const newRegion: BlurRegion = {
+      id: Date.now().toString(),
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      width: 150,
+      height: 100,
+      blurAmount: 10,
+    }
+    setBlurRegions((prev) => [...prev, newRegion])
+    setSelectedBlurRegion(newRegion.id)
+    setSelectedMagnifier(null)
+  }, [image])
 
   const getCanvasCoords = (e: React.MouseEvent) => {
     const canvas = canvasRef.current
@@ -336,15 +386,22 @@ export function ImageMagnifierTool() {
     }
   }
 
-  const isOnResizeHandle = (x: number, y: number, mag: Magnifier) => {
+  const isOnResizeHandle = (x: number, y: number, mag: Magnifier | BlurRegion) => {
     let handleX: number, handleY: number
-    if (mag.shape === "rectangle") {
+    if ("radius" in mag) {
+      // It's a Magnifier
+      if (mag.shape === "rectangle") {
+        handleX = mag.x + mag.width / 2 + 4
+        handleY = mag.y + mag.height / 2 + 4
+      } else {
+        const outlineRadius = mag.radius + 4
+        handleX = mag.x + outlineRadius * Math.cos(Math.PI / 4)
+        handleY = mag.y + outlineRadius * Math.sin(Math.PI / 4)
+      }
+    } else {
+      // It's a BlurRegion
       handleX = mag.x + mag.width / 2 + 4
       handleY = mag.y + mag.height / 2 + 4
-    } else {
-      const outlineRadius = mag.radius + 4
-      handleX = mag.x + outlineRadius * Math.cos(Math.PI / 4)
-      handleY = mag.y + outlineRadius * Math.sin(Math.PI / 4)
     }
     const dist = Math.sqrt((x - handleX) ** 2 + (y - handleY) ** 2)
     return dist <= 12
@@ -360,23 +417,53 @@ export function ImageMagnifierTool() {
     return dist <= mag.radius
   }
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const { x, y } = getCanvasCoords(e)
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas || !image) return
 
-    if (selectedMagnifier) {
-      const selected = magnifiers.find((m) => m.id === selectedMagnifier)
-      if (selected && isOnResizeHandle(x, y, selected)) {
-        setIsResizing(true)
-        setDragState({
-          x,
-          y,
-          initialX: selected.x,
-          initialY: selected.y,
-          initialWidth: selected.width,
-          initialHeight: selected.height,
-          initialRadius: selected.radius,
-          shape: selected.shape,
-        })
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (e.clientX - rect.left) * scaleX
+    const y = (e.clientY - rect.top) * scaleY
+
+    // Check if clicking on blur region resize handle
+    for (const region of blurRegions) {
+      if (selectedBlurRegion === region.id) {
+        const handleX = region.x + region.width / 2 + 4
+        const handleY = region.y + region.height / 2 + 4
+        const handleDist = Math.sqrt(Math.pow(x - handleX, 2) + Math.pow(y - handleY, 2))
+        if (handleDist <= 12) {
+          setIsResizing(true)
+          setDragState({
+            x: region.x,
+            y: region.y,
+            initialX: x,
+            initialY: y,
+            initialWidth: region.width,
+            initialHeight: region.height,
+            initialRadius: 0,
+            shape: "rectangle",
+          })
+          return
+        }
+      }
+    }
+
+    // Check if clicking on a blur region
+    for (const region of blurRegions) {
+      const halfWidth = region.width / 2
+      const halfHeight = region.height / 2
+      if (
+        x >= region.x - halfWidth &&
+        x <= region.x + halfWidth &&
+        y >= region.y - halfHeight &&
+        y <= region.y + halfHeight
+      ) {
+        setSelectedBlurRegion(region.id)
+        setSelectedMagnifier(null)
+        setIsDragging(true)
+        setDragOffset({ x: x - region.x, y: y - region.y })
         return
       }
     }
@@ -385,6 +472,7 @@ export function ImageMagnifierTool() {
       const mag = magnifiers[i]
       if (isInsideMagnifier(x, y, mag)) {
         setSelectedMagnifier(mag.id)
+        setSelectedBlurRegion(null) // Clear blur selection when clicking on magnifier
         setIsDragging(true)
         setDragOffset({ x: x - mag.x, y: y - mag.y })
         setDragState({
@@ -401,27 +489,53 @@ export function ImageMagnifierTool() {
       }
     }
 
+    // If no magnifier or blur region was clicked, deselect all
     setSelectedMagnifier(null)
+    setSelectedBlurRegion(null)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length !== 1) return
     const { x, y } = getTouchCoords(e)
 
-    if (selectedMagnifier) {
-      const selected = magnifiers.find((m) => m.id === selectedMagnifier)
-      if (selected && isOnResizeHandle(x, y, selected)) {
-        setIsResizing(true)
-        setDragState({
-          x,
-          y,
-          initialX: selected.x,
-          initialY: selected.y,
-          initialWidth: selected.width,
-          initialHeight: selected.height,
-          initialRadius: selected.radius,
-          shape: selected.shape,
-        })
+    // Check if clicking on blur region resize handle
+    for (const region of blurRegions) {
+      if (selectedBlurRegion === region.id) {
+        const handleX = region.x + region.width / 2 + 4
+        const handleY = region.y + region.height / 2 + 4
+        const handleDist = Math.sqrt(Math.pow(x - handleX, 2) + Math.pow(y - handleY, 2))
+        if (handleDist <= 12) {
+          setIsResizing(true)
+          setDragState({
+            x: region.x,
+            y: region.y,
+            initialX: x,
+            initialY: y,
+            initialWidth: region.width,
+            initialHeight: region.height,
+            initialRadius: 0,
+            shape: "rectangle",
+          })
+          e.preventDefault()
+          return
+        }
+      }
+    }
+
+    // Check if clicking on a blur region
+    for (const region of blurRegions) {
+      const halfWidth = region.width / 2
+      const halfHeight = region.height / 2
+      if (
+        x >= region.x - halfWidth &&
+        x <= region.x + halfWidth &&
+        y >= region.y - halfHeight &&
+        y <= region.y + halfHeight
+      ) {
+        setSelectedBlurRegion(region.id)
+        setSelectedMagnifier(null)
+        setIsDragging(true)
+        setDragOffset({ x: x - region.x, y: y - region.y })
         e.preventDefault()
         return
       }
@@ -431,6 +545,7 @@ export function ImageMagnifierTool() {
       const mag = magnifiers[i]
       if (isInsideMagnifier(x, y, mag)) {
         setSelectedMagnifier(mag.id)
+        setSelectedBlurRegion(null) // Clear blur selection when clicking on magnifier
         setIsDragging(true)
         setDragOffset({ x: x - mag.x, y: y - mag.y })
         setDragState({
@@ -449,15 +564,35 @@ export function ImageMagnifierTool() {
     }
 
     setSelectedMagnifier(null)
+    setSelectedBlurRegion(null)
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const { x, y } = getCanvasCoords(e)
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas || !image) return
+
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (e.clientX - rect.left) * scaleX
+    const y = (e.clientY - rect.top) * scaleY
 
     if (isDragging && selectedMagnifier) {
       setMagnifiers((prev) =>
         prev.map((mag) => (mag.id === selectedMagnifier ? { ...mag, x: x - dragOffset.x, y: y - dragOffset.y } : mag)),
       )
+    }
+
+    if (isDragging && selectedBlurRegion) {
+      const region = blurRegions.find((r) => r.id === selectedBlurRegion)
+      if (region) {
+        const halfWidth = region.width / 2
+        const halfHeight = region.height / 2
+        const newX = Math.max(halfWidth, Math.min(canvas.width - halfWidth, x - dragOffset.x))
+        const newY = Math.max(halfHeight, Math.min(canvas.height - halfHeight, y - dragOffset.y))
+        setBlurRegions((prev) => prev.map((r) => (r.id === selectedBlurRegion ? { ...r, x: newX, y: newY } : r)))
+      }
+      return
     }
 
     if (isResizing && selectedMagnifier && dragState) {
@@ -478,23 +613,54 @@ export function ImageMagnifierTool() {
       )
     }
 
-    const canvas = canvasRef.current
-    if (canvas) {
-      let cursor = "default"
-      if (selectedMagnifier) {
-        const selected = magnifiers.find((m) => m.id === selectedMagnifier)
-        if (selected && isOnResizeHandle(x, y, selected)) {
-          cursor = "nwse-resize"
-        }
-      }
-      for (const mag of magnifiers) {
-        if (isInsideMagnifier(x, y, mag)) {
-          cursor = "move"
-          break
-        }
-      }
-      canvas.style.cursor = cursor
+    if (isResizing && selectedBlurRegion && dragState) {
+      const deltaX = x - dragState.initialX
+      const deltaY = y - dragState.initialY
+      const newWidth = Math.max(50, dragState.initialWidth + deltaX * 2)
+      const newHeight = Math.max(50, dragState.initialHeight + deltaY * 2)
+      setBlurRegions((prev) =>
+        prev.map((r) => (r.id === selectedBlurRegion ? { ...r, width: newWidth, height: newHeight } : r)),
+      )
+      return
     }
+
+    let cursor = "default"
+    if (selectedMagnifier) {
+      const selected = magnifiers.find((m) => m.id === selectedMagnifier)
+      if (selected && isOnResizeHandle(x, y, selected)) {
+        cursor = "nwse-resize"
+      }
+    }
+
+    if (selectedBlurRegion) {
+      const selected = blurRegions.find((b) => b.id === selectedBlurRegion)
+      if (selected && isOnResizeHandle(x, y, selected)) {
+        cursor = "nwse-resize"
+      }
+    }
+
+    for (const mag of magnifiers) {
+      if (isInsideMagnifier(x, y, mag)) {
+        cursor = "move"
+        break
+      }
+    }
+
+    for (const region of blurRegions) {
+      const halfWidth = region.width / 2
+      const halfHeight = region.height / 2
+      if (
+        x >= region.x - halfWidth &&
+        x <= region.x + halfWidth &&
+        y >= region.y - halfHeight &&
+        y <= region.y + halfHeight
+      ) {
+        cursor = "move"
+        break
+      }
+    }
+
+    canvas.style.cursor = cursor
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -508,6 +674,22 @@ export function ImageMagnifierTool() {
       )
     }
 
+    if (isDragging && selectedBlurRegion) {
+      e.preventDefault()
+      const region = blurRegions.find((r) => r.id === selectedBlurRegion)
+      if (region) {
+        const canvas = canvasRef.current
+        if (canvas) {
+          const halfWidth = region.width / 2
+          const halfHeight = region.height / 2
+          const newX = Math.max(halfWidth, Math.min(canvas.width - halfWidth, x - dragOffset.x))
+          const newY = Math.max(halfHeight, Math.min(canvas.height - halfHeight, y - dragOffset.y))
+          setBlurRegions((prev) => prev.map((r) => (r.id === selectedBlurRegion ? { ...r, x: newX, y: newY } : r)))
+        }
+      }
+      return
+    }
+
     if (isResizing && selectedMagnifier && dragState) {
       e.preventDefault()
       setMagnifiers((prev) =>
@@ -525,6 +707,20 @@ export function ImageMagnifierTool() {
           return mag
         }),
       )
+    }
+
+    if (isResizing && selectedBlurRegion && dragState) {
+      e.preventDefault()
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const deltaX = x - dragState.initialX
+      const deltaY = y - dragState.initialY
+      const newWidth = Math.max(50, dragState.initialWidth + deltaX * 2)
+      const newHeight = Math.max(50, dragState.initialHeight + deltaY * 2)
+      setBlurRegions((prev) =>
+        prev.map((r) => (r.id === selectedBlurRegion ? { ...r, width: newWidth, height: newHeight } : r)),
+      )
+      return
     }
   }
 
@@ -582,6 +778,40 @@ export function ImageMagnifierTool() {
 
     const scaleX = image.naturalWidth / canvasDisplaySize.width
     const scaleY = image.naturalHeight / canvasDisplaySize.height
+
+    blurRegions.forEach((region) => {
+      const scaledX = region.x * scaleX
+      const scaledY = region.y * scaleY
+      const scaledWidth = region.width * scaleX
+      const scaledHeight = region.height * scaleY
+
+      ctx.save()
+      ctx.beginPath()
+      const halfWidth = scaledWidth / 2
+      const halfHeight = scaledHeight / 2
+      ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, scaledWidth, scaledHeight, 8 * Math.min(scaleX, scaleY))
+      ctx.clip()
+
+      ctx.filter = `blur(${region.blurAmount}px)`
+      ctx.drawImage(
+        image,
+        scaledX - halfWidth,
+        scaledY - halfHeight,
+        scaledWidth,
+        scaledHeight,
+        scaledX - halfWidth,
+        scaledY - halfHeight,
+        scaledWidth,
+        scaledHeight,
+      )
+      ctx.restore()
+
+      ctx.beginPath()
+      ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, scaledWidth, scaledHeight, 8 * Math.min(scaleX, scaleY))
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.4)"
+      ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
+      ctx.stroke()
+    })
 
     magnifiers.forEach((mag) => {
       const scaledX = mag.x * scaleX
@@ -684,9 +914,9 @@ export function ImageMagnifierTool() {
     link.download = "magnified-image.png"
     link.href = exportCanvas.toDataURL("image/png")
     link.click()
-  }, [image, magnifiers, canvasDisplaySize])
+  }, [image, magnifiers, blurRegions, canvasDisplaySize])
 
-  const copyImage = useCallback(async () => {
+  const copyToClipboard = useCallback(async () => {
     if (!image) return
 
     const dpr = 2
@@ -701,6 +931,40 @@ export function ImageMagnifierTool() {
 
     const scaleX = image.naturalWidth / canvasDisplaySize.width
     const scaleY = image.naturalHeight / canvasDisplaySize.height
+
+    blurRegions.forEach((region) => {
+      const scaledX = region.x * scaleX
+      const scaledY = region.y * scaleY
+      const scaledWidth = region.width * scaleX
+      const scaledHeight = region.height * scaleY
+
+      ctx.save()
+      ctx.beginPath()
+      const halfWidth = scaledWidth / 2
+      const halfHeight = scaledHeight / 2
+      ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, scaledWidth, scaledHeight, 8 * Math.min(scaleX, scaleY))
+      ctx.clip()
+
+      ctx.filter = `blur(${region.blurAmount}px)`
+      ctx.drawImage(
+        image,
+        scaledX - halfWidth,
+        scaledY - halfHeight,
+        scaledWidth,
+        scaledHeight,
+        scaledX - halfWidth,
+        scaledY - halfHeight,
+        scaledWidth,
+        scaledHeight,
+      )
+      ctx.restore()
+
+      ctx.beginPath()
+      ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, scaledWidth, scaledHeight, 8 * Math.min(scaleX, scaleY))
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.4)"
+      ctx.lineWidth = 1 * Math.min(scaleX, scaleY)
+      ctx.stroke()
+    })
 
     magnifiers.forEach((mag) => {
       const scaledX = mag.x * scaleX
@@ -809,7 +1073,7 @@ export function ImageMagnifierTool() {
         // Clipboard write failed silently
       }
     }, "image/png")
-  }, [image, magnifiers, canvasDisplaySize])
+  }, [image, magnifiers, blurRegions, canvasDisplaySize])
 
   const getMagnifierScreenPosition = (mag: Magnifier) => {
     const canvas = canvasRef.current
@@ -839,82 +1103,119 @@ export function ImageMagnifierTool() {
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
 
         {image && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-            <div className="bg-white/70 backdrop-blur-xl rounded-full px-2 py-1.5 flex items-center gap-1 shadow-lg border border-white/20">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
-                    <Upload className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>New Image</TooltipContent>
-              </Tooltip>
+          <div
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-2 rounded-full bg-white/70 dark:bg-black/70 backdrop-blur-xl shadow-lg border border-black/10 dark:border-white/10 z-50"
+            style={{ animation: "none", transition: "none" }}
+          >
+            {/* Toolbar */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>New Image</TooltipContent>
+            </Tooltip>
 
-              <div className="w-px h-5 bg-black/10 mx-1" />
+            <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-1" />
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => addMagnifier("circle")}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => addMagnifier("circle")}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  <div className="relative">
                     <Circle className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Add Circle</TooltipContent>
-              </Tooltip>
+                    <Plus className="h-2 w-2 absolute -top-0.5 -right-0.5" strokeWidth={3} />
+                  </div>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Add Circle Magnifier</TooltipContent>
+            </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => addMagnifier("rectangle")}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => addMagnifier("rectangle")}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  <div className="relative">
                     <Square className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Add Rectangle</TooltipContent>
-              </Tooltip>
+                    <Plus className="h-2 w-2 absolute -top-0.5 -right-0.5" strokeWidth={3} />
+                  </div>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Add Rectangle Magnifier</TooltipContent>
+            </Tooltip>
 
-              <div className="w-px h-5 bg-black/10 mx-1" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={addBlurRegion}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  <div className="relative">
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="2" opacity="0.5" />
+                      <rect x="6" y="6" width="12" height="12" rx="1" opacity="0.3" />
+                      <rect x="9" y="9" width="6" height="6" opacity="0.2" />
+                    </svg>
+                    <Plus className="h-2 w-2 absolute -top-0.5 -right-0.5" strokeWidth={3} />
+                  </div>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Add Blur Region</TooltipContent>
+            </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={copyImage}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{copied ? "Copied!" : "Copy Image"}</TooltipContent>
-              </Tooltip>
+            <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-1" />
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={downloadImage}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Export Image</TooltipContent>
-              </Tooltip>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={copyToClipboard}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Copy Image</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={downloadImage}
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover:bg-black/10"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Export Image</TooltipContent>
+            </Tooltip>
           </div>
         )}
 
@@ -1050,6 +1351,64 @@ export function ImageMagnifierTool() {
                       <TooltipContent>Delete</TooltipContent>
                     </Tooltip>
                   </div>
+                </div>
+              )
+            })}
+
+            {/* Inline controls for blur regions */}
+            {blurRegions.map((region) => {
+              const canvasRect = canvasRef.current?.getBoundingClientRect()
+              if (!canvasRect || !canvasRef.current) return null
+
+              const scaleX = canvasRect.width / canvasRef.current.width
+              const scaleY = canvasRect.height / canvasRef.current.height
+              const displayX = region.x * scaleX
+              const displayY = region.y * scaleY
+              const displayHalfHeight = (region.height / 2) * scaleY
+
+              const isSelected = selectedBlurRegion === region.id
+
+              if (!isSelected) return null
+
+              return (
+                <div
+                  key={`control-${region.id}`}
+                  className="absolute flex items-center gap-2 px-2 py-1.5 rounded-full bg-white/90 dark:bg-black/90 backdrop-blur-sm shadow-lg border border-black/10 dark:border-white/10 z-40"
+                  style={{
+                    left: displayX,
+                    top: displayY - displayHalfHeight - 44,
+                    transform: "translateX(-50%)",
+                    animation: "none",
+                    transition: "none",
+                  }}
+                >
+                  <Slider
+                    value={[region.blurAmount]}
+                    onValueChange={(value) => {
+                      setBlurRegions((prev) =>
+                        prev.map((r) => (r.id === region.id ? { ...r, blurAmount: value[0] } : r)),
+                      )
+                    }}
+                    min={1}
+                    max={30}
+                    step={1}
+                    className="w-20"
+                  />
+                  <span className="text-xs font-medium min-w-[32px] text-center">{region.blurAmount}px</span>
+
+                  <div className="w-px h-4 bg-black/10 dark:bg-white/10" />
+
+                  <Button
+                    onClick={() => {
+                      setBlurRegions((prev) => prev.filter((r) => r.id !== region.id))
+                      setSelectedBlurRegion(null)
+                    }}
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 rounded-full hover:bg-red-100 hover:text-red-600"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 </div>
               )
             })}
