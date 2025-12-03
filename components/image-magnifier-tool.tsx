@@ -184,7 +184,7 @@ export function ImageMagnifierTool() {
           ctx.arc(mag.x, mag.y, mag.radius + 4, 0, Math.PI * 2)
         }
         ctx.strokeStyle = "#3b82f6"
-        ctx.lineWidth = 3
+        ctx.lineWidth = 2
         ctx.stroke()
         ctx.restore()
 
@@ -984,10 +984,16 @@ export function ImageMagnifierTool() {
                     left: pos.x,
                     top: pos.y - offsetY - 48,
                     transform: "translateX(-50%)",
+                    animation: "none",
+                    transition: "none",
                   }}
                 >
                   <div
                     className="pointer-events-auto bg-white/80 backdrop-blur-md rounded-full px-2 py-1 flex items-center gap-1.5 shadow-lg border border-white/30"
+                    style={{
+                      animation: "none",
+                      transition: "none",
+                    }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Slider
