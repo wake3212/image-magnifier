@@ -3,7 +3,6 @@
 import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Upload, Download, Copy, Trash2, Check, Circle, Square, Sun, Moon } from "lucide-react"
 
@@ -16,6 +15,7 @@ interface Magnifier {
   height: number
   zoom: number
   shape: "circle" | "rectangle"
+  darkBorder: boolean
 }
 
 export function ImageMagnifierTool() {
@@ -155,7 +155,7 @@ export function ImageMagnifierTool() {
       ctx.shadowBlur = 15
       ctx.shadowOffsetX = 0
       ctx.shadowOffsetY = 4
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
       ctx.lineWidth = 2
       ctx.stroke()
       ctx.restore()
@@ -168,7 +168,7 @@ export function ImageMagnifierTool() {
       } else {
         ctx.arc(mag.x, mag.y, mag.radius + 1, 0, Math.PI * 2)
       }
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
       ctx.lineWidth = 1
       ctx.stroke()
 
@@ -190,7 +190,7 @@ export function ImageMagnifierTool() {
         ctx.stroke()
       }
     })
-  }, [image, magnifiers, selectedMagnifier, canvasDisplaySize, darkBorder])
+  }, [image, magnifiers, selectedMagnifier, canvasDisplaySize])
 
   useEffect(() => {
     drawCanvas()
@@ -289,6 +289,7 @@ export function ImageMagnifierTool() {
       height: 120,
       zoom: 2,
       shape,
+      darkBorder: darkBorder,
     }
     setMagnifiers([...magnifiers, newMagnifier])
     setSelectedMagnifier(newMagnifier.id)
@@ -638,7 +639,7 @@ export function ImageMagnifierTool() {
       ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
       ctx.shadowOffsetX = 0
       ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
       ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
       ctx.stroke()
       ctx.restore()
@@ -657,7 +658,7 @@ export function ImageMagnifierTool() {
       } else {
         ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
       }
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
       ctx.lineWidth = 1
       ctx.stroke()
     })
@@ -666,7 +667,7 @@ export function ImageMagnifierTool() {
     link.download = "magnified-image.png"
     link.href = exportCanvas.toDataURL("image/png")
     link.click()
-  }, [image, magnifiers, canvasDisplaySize, darkBorder])
+  }, [image, magnifiers, canvasDisplaySize])
 
   const copyImage = useCallback(async () => {
     if (!image) return
@@ -757,7 +758,7 @@ export function ImageMagnifierTool() {
       ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
       ctx.shadowOffsetX = 0
       ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
       ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
       ctx.stroke()
       ctx.restore()
@@ -776,7 +777,7 @@ export function ImageMagnifierTool() {
       } else {
         ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
       }
-      ctx.strokeStyle = darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+      ctx.strokeStyle = mag.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
       ctx.lineWidth = 1
       ctx.stroke()
     })
@@ -791,9 +792,7 @@ export function ImageMagnifierTool() {
         // Clipboard write failed silently
       }
     }, "image/png")
-  }, [image, magnifiers, canvasDisplaySize, darkBorder])
-
-  const selectedMag = magnifiers.find((m) => m.id === selectedMagnifier)
+  }, [image, magnifiers, canvasDisplaySize])
 
   const getMagnifierScreenPosition = (mag: Magnifier) => {
     const canvas = canvasRef.current
@@ -828,6 +827,22 @@ export function ImageMagnifierTool() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-full hover:bg-black/10"
+                  >
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>New Image</TooltipContent>
+              </Tooltip>
+
+              <div className="w-px h-5 bg-black/10 mx-1" />
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
                     onClick={() => addMagnifier("circle")}
                     size="icon"
                     variant="ghost"
@@ -858,56 +873,16 @@ export function ImageMagnifierTool() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    onClick={() => setDarkBorder(!darkBorder)}
+                    onClick={copyImage}
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 rounded-full hover:bg-black/10"
                   >
-                    {darkBorder ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{darkBorder ? "Light Border" : "Dark Border"}</TooltipContent>
+                <TooltipContent>{copied ? "Copied!" : "Copy Image"}</TooltipContent>
               </Tooltip>
-
-              <div className="w-px h-5 bg-black/10 mx-1" />
-
-              {selectedMag && (
-                <>
-                  <div className="flex items-center gap-2 px-2">
-                    <Slider
-                      value={[selectedMag.zoom]}
-                      onValueChange={([v]) => updateSelectedZoom(v)}
-                      min={1}
-                      max={5}
-                      step={0.1}
-                      className="w-24"
-                    />
-                    <span className="text-xs font-medium text-neutral-600 w-8 tabular-nums">
-                      {selectedMag.zoom.toFixed(1)}x
-                    </span>
-                  </div>
-                  <div className="w-px h-5 bg-black/10 mx-1" />
-                </>
-              )}
-
-              {selectedMag && (
-                <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={deleteSelected}
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 rounded-full hover:bg-red-100 text-red-500"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Delete</TooltipContent>
-                  </Tooltip>
-                  <div className="w-px h-5 bg-black/10 mx-1" />
-                </>
-              )}
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -920,37 +895,7 @@ export function ImageMagnifierTool() {
                     <Download className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Download</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={copyImage}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{copied ? "Copied!" : "Copy"}</TooltipContent>
-              </Tooltip>
-
-              <div className="w-px h-5 bg-black/10 mx-1" />
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-full hover:bg-black/10"
-                  >
-                    <Upload className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>New Image</TooltipContent>
+                <TooltipContent>Export Image</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -1008,6 +953,111 @@ export function ImageMagnifierTool() {
               className="block rounded-lg shadow-2xl touch-none"
               tabIndex={0}
             />
+
+            {magnifiers.map((mag) => {
+              const pos = getMagnifierScreenPosition(mag)
+              const isSelected = selectedMagnifier === mag.id
+              return (
+                <div
+                  key={mag.id}
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: pos.x,
+                    top: pos.y - pos.radius - 48,
+                    transform: "translateX(-50%)",
+                  }}
+                >
+                  <div
+                    className={`pointer-events-auto bg-white/80 backdrop-blur-md rounded-full px-1.5 py-1 flex items-center gap-0.5 shadow-lg border border-white/30 transition-opacity ${
+                      isSelected ? "opacity-100" : "opacity-0 hover:opacity-100"
+                    }`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => {
+                            setSelectedMagnifier(mag.id)
+                            setMagnifiers((prev) =>
+                              prev.map((m) => (m.id === mag.id ? { ...m, zoom: Math.max(1, m.zoom - 0.5) } : m)),
+                            )
+                          }}
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-full hover:bg-black/10 text-xs font-medium"
+                        >
+                          -
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Zoom Out</TooltipContent>
+                    </Tooltip>
+
+                    <span className="text-[10px] font-medium text-neutral-600 w-6 text-center tabular-nums">
+                      {mag.zoom.toFixed(1)}x
+                    </span>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => {
+                            setSelectedMagnifier(mag.id)
+                            setMagnifiers((prev) =>
+                              prev.map((m) => (m.id === mag.id ? { ...m, zoom: Math.min(5, m.zoom + 0.5) } : m)),
+                            )
+                          }}
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-full hover:bg-black/10 text-xs font-medium"
+                        >
+                          +
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Zoom In</TooltipContent>
+                    </Tooltip>
+
+                    <div className="w-px h-4 bg-black/10 mx-0.5" />
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => {
+                            setSelectedMagnifier(mag.id)
+                            setMagnifiers((prev) =>
+                              prev.map((m) => (m.id === mag.id ? { ...m, darkBorder: !mag.darkBorder } : m)),
+                            )
+                          }}
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-full hover:bg-black/10"
+                        >
+                          {mag.darkBorder ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{mag.darkBorder ? "Light Border" : "Dark Border"}</TooltipContent>
+                    </Tooltip>
+
+                    <div className="w-px h-4 bg-black/10 mx-0.5" />
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => {
+                            setMagnifiers((prev) => prev.filter((m) => m.id !== mag.id))
+                            if (selectedMagnifier === mag.id) setSelectedMagnifier(null)
+                          }}
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-full hover:bg-red-100 text-red-500"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              )
+            })}
 
             {isDragOver && (
               <div className="absolute inset-0 flex items-center justify-center bg-blue-500/20 rounded-lg">
