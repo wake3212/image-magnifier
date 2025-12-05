@@ -159,6 +159,18 @@ export function ImageMagnifierTool() {
             // Apply stackblur with the actual blur radius
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
 
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
+
             // Draw only the center portion (excluding padding) back to main canvas
             ctx.drawImage(
               tempCanvas,
@@ -196,6 +208,18 @@ export function ImageMagnifierTool() {
             )
 
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
 
             ctx.save()
             ctx.beginPath()
@@ -721,6 +745,19 @@ export function ImageMagnifierTool() {
               paddedHeight,
             )
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
+
             ctx.drawImage(
               tempCanvas,
               padding,
@@ -752,6 +789,19 @@ export function ImageMagnifierTool() {
               paddedSize,
             )
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
+
             ctx.drawImage(
               tempCanvas,
               padding,
@@ -916,6 +966,19 @@ export function ImageMagnifierTool() {
               paddedHeight,
             )
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
+
             ctx.drawImage(
               tempCanvas,
               padding,
@@ -947,6 +1010,19 @@ export function ImageMagnifierTool() {
               paddedSize,
             )
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+
+            const debugCtx = tempCanvas.getContext("2d")
+            if (debugCtx) {
+              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
+              console.log(
+                "[v0] after blur sample pixels:",
+                debugData.data[0],
+                debugData.data[1],
+                debugData.data[2],
+                debugData.data[3],
+              )
+            }
+
             ctx.drawImage(
               tempCanvas,
               padding,
