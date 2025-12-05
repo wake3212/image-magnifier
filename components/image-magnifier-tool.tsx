@@ -115,6 +115,10 @@ export function ImageMagnifierTool() {
   } | null>(null)
   const [darkBorder, setDarkBorder] = useState(false)
 
+  const blurCacheRef = useRef<Map<string, ImageData>>(new Map())
+  const isInteractingRef = useRef(false)
+  const lastDrawTimeRef = useRef(0)
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -155,12 +159,126 @@ export function ImageMagnifierTool() {
     }
   }, [selectedAnnotation])
 
+  useEffect(() => {
+    const currentIds = new Set(annotations.map((a) => a.id))
+    for (const key of blurCacheRef.current.keys()) {
+      const id = key.split("-")[0]
+      if (!currentIds.has(id)) {
+        blurCacheRef.current.delete(key)
+      }
+    }
+  }, [annotations])
+
+  const getCachedBlur = useCallback(
+    (ann: Annotation, forceRecalculate = false): ImageData | null => {
+      if (ann.type !== "blur" || !image) return null
+
+      const cacheKey = `${ann.id}-${ann.blurAmount}-${Math.round(ann.width)}-${Math.round(ann.height)}-${Math.round(ann.radius)}`
+
+      if (!forceRecalculate && blurCacheRef.current.has(cacheKey)) {
+        return blurCacheRef.current.get(cacheKey)!
+      }
+
+      // Don't calculate expensive blur during active interaction
+      if (isInteractingRef.current && blurCacheRef.current.size > 0) {
+        // Return any existing cache for this annotation
+        for (const [key, value] of blurCacheRef.current.entries()) {
+          if (key.startsWith(ann.id)) {
+            return value
+          }
+        }
+      }
+
+      const tempCanvas = document.createElement("canvas")
+      const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
+      if (!tempCtx) return null
+
+      const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
+      const padding = blurRadius * 2
+
+      const scaleX = image.naturalWidth / canvasDisplaySize.width
+      const scaleY = image.naturalHeight / canvasDisplaySize.height
+      const sourceX = ann.x * scaleX
+      const sourceY = ann.y * scaleY
+
+      if (ann.shape === "rectangle") {
+        const regionWidth = Math.ceil(ann.width)
+        const regionHeight = Math.ceil(ann.height)
+        const paddedWidth = regionWidth + padding * 2
+        const paddedHeight = regionHeight + padding * 2
+        tempCanvas.width = paddedWidth
+        tempCanvas.height = paddedHeight
+
+        const srcX = sourceX - (ann.width / 2) * scaleX
+        const srcY = sourceY - (ann.height / 2) * scaleY
+        const srcW = ann.width * scaleX
+        const srcH = ann.height * scaleY
+        const paddingInImageX = padding * scaleX
+        const paddingInImageY = padding * scaleY
+
+        drawImageWithEdgeExtension(
+          tempCtx,
+          image,
+          srcX - paddingInImageX,
+          srcY - paddingInImageY,
+          srcW + paddingInImageX * 2,
+          srcH + paddingInImageY * 2,
+          paddedWidth,
+          paddedHeight,
+        )
+      } else {
+        const regionSize = Math.ceil(ann.radius * 2)
+        const paddedSize = regionSize + padding * 2
+        tempCanvas.width = paddedSize
+        tempCanvas.height = paddedSize
+
+        const srcX = sourceX - ann.radius * scaleX
+        const srcY = sourceY - ann.radius * scaleY
+        const srcSize = ann.radius * 2 * scaleX
+        const paddingInImage = padding * scaleX
+
+        drawImageWithEdgeExtension(
+          tempCtx,
+          image,
+          srcX - paddingInImage,
+          srcY - paddingInImage,
+          srcSize + paddingInImage * 2,
+          srcSize + paddingInImage * 2,
+          paddedSize,
+          paddedSize,
+        )
+      }
+
+      stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, blurRadius)
+
+      const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height)
+
+      // Clear old caches for this annotation and store new one
+      for (const key of blurCacheRef.current.keys()) {
+        if (key.startsWith(ann.id)) {
+          blurCacheRef.current.delete(key)
+        }
+      }
+      blurCacheRef.current.set(cacheKey, imageData)
+
+      return imageData
+    },
+    [image, canvasDisplaySize],
+  )
+
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas || !image || canvasDisplaySize.width === 0) return
 
     const ctx = canvas.getContext("2d")
     if (!ctx) return
+
+    const now = performance.now()
+    if (isInteractingRef.current && now - lastDrawTimeRef.current < 16) {
+      requestAnimationFrame(drawCanvas)
+      return
+    }
+    lastDrawTimeRef.current = now
 
     const dpr = window.devicePixelRatio || 1
 
@@ -187,99 +305,115 @@ export function ImageMagnifierTool() {
       const sourceY = ann.y * scaleY
 
       if (ann.type === "blur") {
-        const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
-        if (tempCtx) {
-          // Cap blur radius for performance with Gaussian blur
-          const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
-          const padding = blurRadius * 2
+        const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
+        const padding = blurRadius * 2
 
-          if (ann.shape === "rectangle") {
-            // Work in display coordinates, not canvas pixels
-            const regionWidth = Math.ceil(ann.width)
-            const regionHeight = Math.ceil(ann.height)
-            const paddedWidth = regionWidth + padding * 2
-            const paddedHeight = regionHeight + padding * 2
-            tempCanvas.width = paddedWidth
-            tempCanvas.height = paddedHeight
+        // During interaction, use a simple pixelated preview instead of expensive blur
+        if (isInteractingRef.current) {
+          // Draw pixelated low-res version as preview
+          const previewCanvas = document.createElement("canvas")
+          const previewCtx = previewCanvas.getContext("2d")
+          if (previewCtx) {
+            const pixelSize = Math.max(4, Math.floor(blurRadius / 3))
 
-            // Source coordinates in image space
-            const srcX = sourceX - (ann.width / 2) * scaleX
-            const srcY = sourceY - (ann.height / 2) * scaleY
-            const srcW = ann.width * scaleX
-            const srcH = ann.height * scaleY
+            if (ann.shape === "rectangle") {
+              const regionWidth = Math.ceil(ann.width)
+              const regionHeight = Math.ceil(ann.height)
+              const smallWidth = Math.ceil(regionWidth / pixelSize)
+              const smallHeight = Math.ceil(regionHeight / pixelSize)
 
-            // Expand source area for padding
-            const paddingInImageX = padding * scaleX
-            const paddingInImageY = padding * scaleY
+              previewCanvas.width = smallWidth
+              previewCanvas.height = smallHeight
 
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              srcX - paddingInImageX,
-              srcY - paddingInImageY,
-              srcW + paddingInImageX * 2,
-              srcH + paddingInImageY * 2,
-              paddedWidth,
-              paddedHeight,
-            )
+              const srcX = sourceX - (ann.width / 2) * scaleX
+              const srcY = sourceY - (ann.height / 2) * scaleY
+              const srcW = ann.width * scaleX
+              const srcH = ann.height * scaleY
 
-            // Apply Gaussian blur
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+              previewCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, smallWidth, smallHeight)
 
-            // Draw only the center portion (excluding padding) back to main canvas
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionWidth,
-              regionHeight,
-              ann.x - ann.width / 2,
-              ann.y - ann.height / 2,
-              ann.width,
-              ann.height,
-            )
-          } else {
-            const regionSize = Math.ceil(ann.radius * 2)
-            const paddedSize = regionSize + padding * 2
-            tempCanvas.width = paddedSize
-            tempCanvas.height = paddedSize
+              ctx.imageSmoothingEnabled = false
+              ctx.drawImage(
+                previewCanvas,
+                0,
+                0,
+                smallWidth,
+                smallHeight,
+                ann.x - ann.width / 2,
+                ann.y - ann.height / 2,
+                ann.width,
+                ann.height,
+              )
+              ctx.imageSmoothingEnabled = true
+            } else {
+              const regionSize = Math.ceil(ann.radius * 2)
+              const smallSize = Math.ceil(regionSize / pixelSize)
 
-            const srcX = sourceX - ann.radius * scaleX
-            const srcY = sourceY - ann.radius * scaleY
-            const srcSize = ann.radius * 2 * scaleX
+              previewCanvas.width = smallSize
+              previewCanvas.height = smallSize
 
-            const paddingInImage = padding * scaleX
+              const srcX = sourceX - ann.radius * scaleX
+              const srcY = sourceY - ann.radius * scaleY
+              const srcSize = ann.radius * 2 * scaleX
 
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              srcX - paddingInImage,
-              srcY - paddingInImage,
-              srcSize + paddingInImage * 2,
-              srcSize + paddingInImage * 2,
-              paddedSize,
-              paddedSize,
-            )
+              previewCtx.drawImage(image, srcX, srcY, srcSize, srcSize, 0, 0, smallSize, smallSize)
 
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+              ctx.imageSmoothingEnabled = false
+              ctx.drawImage(
+                previewCanvas,
+                0,
+                0,
+                smallSize,
+                smallSize,
+                ann.x - ann.radius,
+                ann.y - ann.radius,
+                ann.radius * 2,
+                ann.radius * 2,
+              )
+              ctx.imageSmoothingEnabled = true
+            }
+          }
+        } else {
+          // Not interacting - use full quality cached blur
+          const cachedBlur = getCachedBlur(ann)
 
-            ctx.save()
-            ctx.beginPath()
-            ctx.arc(ann.x, ann.y, ann.radius, 0, Math.PI * 2)
-            ctx.clip()
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionSize,
-              regionSize,
-              ann.x - ann.radius,
-              ann.y - ann.radius,
-              ann.radius * 2,
-              ann.radius * 2,
-            )
-            ctx.restore()
+          if (cachedBlur) {
+            const tempCanvas = document.createElement("canvas")
+            tempCanvas.width = cachedBlur.width
+            tempCanvas.height = cachedBlur.height
+            const tempCtx = tempCanvas.getContext("2d")
+            if (tempCtx) {
+              tempCtx.putImageData(cachedBlur, 0, 0)
+
+              if (ann.shape === "rectangle") {
+                const regionWidth = Math.ceil(ann.width)
+                const regionHeight = Math.ceil(ann.height)
+                ctx.drawImage(
+                  tempCanvas,
+                  padding,
+                  padding,
+                  regionWidth,
+                  regionHeight,
+                  ann.x - ann.width / 2,
+                  ann.y - ann.height / 2,
+                  ann.width,
+                  ann.height,
+                )
+              } else {
+                const regionSize = Math.ceil(ann.radius * 2)
+                ctx.drawImage(
+                  tempCanvas,
+                  padding,
+                  padding,
+                  regionSize,
+                  regionSize,
+                  ann.x - ann.radius,
+                  ann.y - ann.radius,
+                  ann.radius * 2,
+                  ann.radius * 2,
+                )
+              }
+            }
           }
         }
       } else {
@@ -321,11 +455,11 @@ export function ImageMagnifierTool() {
         ctx.save()
         ctx.beginPath()
         if (ann.shape === "rectangle") {
-          const halfWidth = ann.width / 2
-          const halfHeight = ann.height / 2
-          ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, ann.width, ann.height, 8)
+          const halfWidth = ann.width / 2 + 1
+          const halfHeight = ann.height / 2 + 1
+          ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, halfWidth * 2, halfHeight * 2, 8)
         } else {
-          ctx.arc(ann.x, ann.y, ann.radius, 0, Math.PI * 2)
+          ctx.arc(ann.x, ann.y, ann.radius + 1, 0, Math.PI * 2)
         }
         ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
         ctx.shadowBlur = 15
@@ -382,7 +516,7 @@ export function ImageMagnifierTool() {
         ctx.stroke()
       }
     })
-  }, [image, annotations, selectedAnnotation, canvasDisplaySize])
+  }, [image, annotations, selectedAnnotation, canvasDisplaySize, getCachedBlur])
 
   useEffect(() => {
     drawCanvas()
@@ -545,6 +679,7 @@ export function ImageMagnifierTool() {
       const selected = annotations.find((m) => m.id === selectedAnnotation)
       if (selected && isOnResizeHandle(x, y, selected)) {
         setIsResizing(true)
+        isInteractingRef.current = true // Mark interaction start
         setDragState({
           x,
           y,
@@ -564,6 +699,7 @@ export function ImageMagnifierTool() {
       if (isInsideAnnotation(x, y, ann)) {
         setSelectedAnnotation(ann.id)
         setIsDragging(true)
+        isInteractingRef.current = true // Mark interaction start
         setDragOffset({ x: x - ann.x, y: y - ann.y })
         setDragState({
           x,
@@ -590,6 +726,7 @@ export function ImageMagnifierTool() {
       const selected = annotations.find((m) => m.id === selectedAnnotation)
       if (selected && isOnResizeHandle(x, y, selected)) {
         setIsResizing(true)
+        isInteractingRef.current = true // Mark interaction start
         setDragState({
           x,
           y,
@@ -610,6 +747,7 @@ export function ImageMagnifierTool() {
       if (isInsideAnnotation(x, y, ann)) {
         setSelectedAnnotation(ann.id)
         setIsDragging(true)
+        isInteractingRef.current = true // Mark interaction start
         setDragOffset({ x: x - ann.x, y: y - ann.y })
         setDragState({
           x,
@@ -707,15 +845,39 @@ export function ImageMagnifierTool() {
   }
 
   const handleMouseUp = () => {
+    const wasInteracting = isInteractingRef.current
+    isInteractingRef.current = false
     setIsDragging(false)
     setIsResizing(false)
     setDragState(null)
+
+    // Force recalculate blur caches after interaction ends
+    if (wasInteracting) {
+      annotations.forEach((ann) => {
+        if (ann.type === "blur") {
+          getCachedBlur(ann, true)
+        }
+      })
+      requestAnimationFrame(drawCanvas)
+    }
   }
 
   const handleTouchEnd = () => {
+    const wasInteracting = isInteractingRef.current
+    isInteractingRef.current = false
     setIsDragging(false)
     setIsResizing(false)
     setDragState(null)
+
+    // Force recalculate blur caches after interaction ends
+    if (wasInteracting) {
+      annotations.forEach((ann) => {
+        if (ann.type === "blur") {
+          getCachedBlur(ann, true)
+        }
+      })
+      requestAnimationFrame(drawCanvas)
+    }
   }
 
   const downloadImage = useCallback(async () => {
@@ -1186,6 +1348,21 @@ export function ImageMagnifierTool() {
     }
   }
 
+  const handleBlurAmountChange = useCallback((id: string, value: number) => {
+    setAnnotations((prev) => prev.map((ann) => (ann.id === id ? { ...ann, blurAmount: value } : ann)))
+  }, [])
+
+  const handleBlurAmountChangeEnd = useCallback(
+    (id: string) => {
+      const ann = annotations.find((a) => a.id === id)
+      if (ann && ann.type === "blur") {
+        getCachedBlur(ann, true)
+        requestAnimationFrame(drawCanvas)
+      }
+    },
+    [annotations, getCachedBlur, drawCanvas],
+  )
+
   return (
     <TooltipProvider delayDuration={300}>
       <div
@@ -1378,16 +1555,17 @@ export function ImageMagnifierTool() {
                           min={1}
                           max={30}
                           step={1}
+                          className="w-24"
                           onValueChange={(value) => {
-                            setAnnotations((prev) =>
-                              prev.map((m) => (m.id === ann.id ? { ...m, blurAmount: value[0] } : m)),
-                            )
+                            isInteractingRef.current = true
+                            handleBlurAmountChange(ann.id, value[0])
                           }}
-                          className="w-20"
+                          onValueCommit={(value) => {
+                            isInteractingRef.current = false
+                            handleBlurAmountChangeEnd(ann.id)
+                          }}
                         />
-                        <span className="text-[10px] font-medium text-neutral-600 w-7 text-center tabular-nums">
-                          {ann.blurAmount}px
-                        </span>
+                        <span className="text-xs text-muted-foreground w-8">{ann.blurAmount}px</span>
                       </>
                     ) : (
                       <>
