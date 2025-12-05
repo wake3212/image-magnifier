@@ -119,14 +119,14 @@ export function ImageMagnifierTool() {
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
-          // Blur radius in canvas pixels
-          const blurRadius = Math.round(ann.blurAmount * dpr)
-          // Extra padding to avoid edge artifacts
+          // Cap blur radius for performance with Gaussian blur
+          const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
           const padding = blurRadius * 2
 
           if (ann.shape === "rectangle") {
-            const regionWidth = Math.ceil(ann.width * dpr)
-            const regionHeight = Math.ceil(ann.height * dpr)
+            // Work in display coordinates, not canvas pixels
+            const regionWidth = Math.ceil(ann.width)
+            const regionHeight = Math.ceil(ann.height)
             const paddedWidth = regionWidth + padding * 2
             const paddedHeight = regionHeight + padding * 2
             tempCanvas.width = paddedWidth
@@ -139,8 +139,8 @@ export function ImageMagnifierTool() {
             const srcH = ann.height * scaleY
 
             // Expand source area for padding
-            const paddingInImageX = (padding / dpr) * scaleX
-            const paddingInImageY = (padding / dpr) * scaleY
+            const paddingInImageX = padding * scaleX
+            const paddingInImageY = padding * scaleY
 
             tempCtx.drawImage(
               image,
@@ -154,22 +154,8 @@ export function ImageMagnifierTool() {
               paddedHeight,
             )
 
-            console.log("[v0] blur rect:", { blurRadius, paddedWidth, paddedHeight, regionWidth, regionHeight })
-
-            // Apply stackblur with the actual blur radius
+            // Apply Gaussian blur
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
-
-            const debugCtx = tempCanvas.getContext("2d")
-            if (debugCtx) {
-              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
-              console.log(
-                "[v0] after blur sample pixels:",
-                debugData.data[0],
-                debugData.data[1],
-                debugData.data[2],
-                debugData.data[3],
-              )
-            }
 
             // Draw only the center portion (excluding padding) back to main canvas
             ctx.drawImage(
@@ -184,7 +170,7 @@ export function ImageMagnifierTool() {
               ann.height,
             )
           } else {
-            const regionSize = Math.ceil(ann.radius * 2 * dpr)
+            const regionSize = Math.ceil(ann.radius * 2)
             const paddedSize = regionSize + padding * 2
             tempCanvas.width = paddedSize
             tempCanvas.height = paddedSize
@@ -193,7 +179,7 @@ export function ImageMagnifierTool() {
             const srcY = sourceY - ann.radius * scaleY
             const srcSize = ann.radius * 2 * scaleX
 
-            const paddingInImage = (padding / dpr) * scaleX
+            const paddingInImage = padding * scaleX
 
             tempCtx.drawImage(
               image,
@@ -208,18 +194,6 @@ export function ImageMagnifierTool() {
             )
 
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
-
-            const debugCtx = tempCanvas.getContext("2d")
-            if (debugCtx) {
-              const debugData = debugCtx.getImageData(padding, padding, 10, 10)
-              console.log(
-                "[v0] after blur sample pixels:",
-                debugData.data[0],
-                debugData.data[1],
-                debugData.data[2],
-                debugData.data[3],
-              )
-            }
 
             ctx.save()
             ctx.beginPath()
