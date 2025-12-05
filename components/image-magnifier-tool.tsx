@@ -2,10 +2,11 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
+import { Upload, Download, Copy, Check, Sun, Moon, Circle, Square, Trash2, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Download, Copy, Trash2, Check, Circle, Square, Sun, Moon, EyeOff } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { stackBlurCanvas } from "@/lib/stackblur"
 
 interface Annotation {
   id: string
@@ -115,75 +116,63 @@ export function ImageMagnifierTool() {
       const sourceY = ann.y * scaleY
 
       if (ann.type === "blur") {
-        // For blur, we need to use a temporary canvas with filter
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
-          const padding = ann.blurAmount * 2 // Extra padding to avoid edge artifacts
           if (ann.shape === "rectangle") {
-            tempCanvas.width = (ann.width + padding * 2) * dpr
-            tempCanvas.height = (ann.height + padding * 2) * dpr
-            tempCtx.filter = `blur(${ann.blurAmount}px)`
+            tempCanvas.width = Math.ceil(ann.width * dpr)
+            tempCanvas.height = Math.ceil(ann.height * dpr)
             tempCtx.drawImage(
               image,
-              sourceX - (ann.width / 2 + padding) * scaleX,
-              sourceY - (ann.height / 2 + padding) * scaleY,
-              (ann.width + padding * 2) * scaleX,
-              (ann.height + padding * 2) * scaleY,
+              sourceX - (ann.width / 2) * scaleX,
+              sourceY - (ann.height / 2) * scaleY,
+              ann.width * scaleX,
+              ann.height * scaleY,
               0,
               0,
-              (ann.width + padding * 2) * dpr,
-              (ann.height + padding * 2) * dpr,
+              ann.width * dpr,
+              ann.height * dpr,
             )
-            // Clip to the actual region when drawing back
-            ctx.save()
-            ctx.beginPath()
-            ctx.roundRect(ann.x - ann.width / 2, ann.y - ann.height / 2, ann.width, ann.height, 8)
-            ctx.clip()
+            // Apply stackblur
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(ann.blurAmount * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (ann.width + padding * 2) * dpr,
-              (ann.height + padding * 2) * dpr,
-              ann.x - ann.width / 2 - padding,
-              ann.y - ann.height / 2 - padding,
-              ann.width + padding * 2,
-              ann.height + padding * 2,
+              ann.width * dpr,
+              ann.height * dpr,
+              ann.x - ann.width / 2,
+              ann.y - ann.height / 2,
+              ann.width,
+              ann.height,
             )
-            ctx.restore()
           } else {
-            tempCanvas.width = (ann.radius * 2 + padding * 2) * dpr
-            tempCanvas.height = (ann.radius * 2 + padding * 2) * dpr
-            tempCtx.filter = `blur(${ann.blurAmount}px)`
+            tempCanvas.width = Math.ceil(ann.radius * 2 * dpr)
+            tempCanvas.height = Math.ceil(ann.radius * 2 * dpr)
             tempCtx.drawImage(
               image,
-              sourceX - (ann.radius + padding) * scaleX,
-              sourceY - (ann.radius + padding) * scaleY,
-              (ann.radius * 2 + padding * 2) * scaleX,
-              (ann.radius * 2 + padding * 2) * scaleY,
+              sourceX - ann.radius * scaleX,
+              sourceY - ann.radius * scaleY,
+              ann.radius * 2 * scaleX,
+              ann.radius * 2 * scaleY,
               0,
               0,
-              (ann.radius * 2 + padding * 2) * dpr,
-              (ann.radius * 2 + padding * 2) * dpr,
+              ann.radius * 2 * dpr,
+              ann.radius * 2 * dpr,
             )
-            // Clip to the actual region when drawing back
-            ctx.save()
-            ctx.beginPath()
-            ctx.arc(ann.x, ann.y, ann.radius, 0, Math.PI * 2)
-            ctx.clip()
+            // Apply stackblur
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(ann.blurAmount * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (ann.radius * 2 + padding * 2) * dpr,
-              (ann.radius * 2 + padding * 2) * dpr,
-              ann.x - ann.radius - padding,
-              ann.y - ann.radius - padding,
-              ann.radius * 2 + padding * 2,
-              ann.radius * 2 + padding * 2,
+              ann.radius * 2 * dpr,
+              ann.radius * 2 * dpr,
+              ann.x - ann.radius,
+              ann.y - ann.radius,
+              ann.radius * 2,
+              ann.radius * 2,
             )
-            ctx.restore()
           }
         }
       } else {
@@ -220,6 +209,7 @@ export function ImageMagnifierTool() {
 
       ctx.restore()
 
+      // Only draw borders for magnifiers, not blur regions
       if (ann.type !== "blur") {
         ctx.save()
         ctx.beginPath()
@@ -666,75 +656,58 @@ export function ImageMagnifierTool() {
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
           const scaledBlur = ann.blurAmount * Math.min(scaleX, scaleY)
-          const padding = scaledBlur * 2
           if (ann.shape === "rectangle") {
-            tempCanvas.width = (scaledWidth + padding * 2) * dpr
-            tempCanvas.height = (scaledHeight + padding * 2) * dpr
-            tempCtx.filter = `blur(${scaledBlur}px)`
+            tempCanvas.width = Math.ceil(scaledWidth * dpr)
+            tempCanvas.height = Math.ceil(scaledHeight * dpr)
             tempCtx.drawImage(
               image,
-              scaledX - scaledWidth / 2 - padding,
-              scaledY - scaledHeight / 2 - padding,
-              scaledWidth + padding * 2,
-              scaledHeight + padding * 2,
-              0,
-              0,
-              (scaledWidth + padding * 2) * dpr,
-              (scaledHeight + padding * 2) * dpr,
-            )
-            ctx.save()
-            ctx.beginPath()
-            ctx.roundRect(
               scaledX - scaledWidth / 2,
               scaledY - scaledHeight / 2,
               scaledWidth,
               scaledHeight,
-              8 * Math.min(scaleX, scaleY),
+              0,
+              0,
+              scaledWidth * dpr,
+              scaledHeight * dpr,
             )
-            ctx.clip()
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(scaledBlur * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (scaledWidth + padding * 2) * dpr,
-              (scaledHeight + padding * 2) * dpr,
-              scaledX - scaledWidth / 2 - padding,
-              scaledY - scaledHeight / 2 - padding,
-              scaledWidth + padding * 2,
-              scaledHeight + padding * 2,
+              scaledWidth * dpr,
+              scaledHeight * dpr,
+              scaledX - scaledWidth / 2,
+              scaledY - scaledHeight / 2,
+              scaledWidth,
+              scaledHeight,
             )
-            ctx.restore()
           } else {
-            tempCanvas.width = (scaledRadius * 2 + padding * 2) * dpr
-            tempCanvas.height = (scaledRadius * 2 + padding * 2) * dpr
-            tempCtx.filter = `blur(${scaledBlur}px)`
+            tempCanvas.width = Math.ceil(scaledRadius * 2 * dpr)
+            tempCanvas.height = Math.ceil(scaledRadius * 2 * dpr)
             tempCtx.drawImage(
               image,
-              scaledX - scaledRadius - padding,
-              scaledY - scaledRadius - padding,
-              scaledRadius * 2 + padding * 2,
-              scaledRadius * 2 + padding * 2,
+              scaledX - scaledRadius,
+              scaledY - scaledRadius,
+              scaledRadius * 2,
+              scaledRadius * 2,
               0,
               0,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              (scaledRadius * 2 + padding * 2) * dpr,
+              scaledRadius * 2 * dpr,
+              scaledRadius * 2 * dpr,
             )
-            ctx.save()
-            ctx.beginPath()
-            ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-            ctx.clip()
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(scaledBlur * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              scaledX - scaledRadius - padding,
-              scaledY - scaledRadius - padding,
-              scaledRadius * 2 + padding * 2,
-              scaledRadius * 2 + padding * 2,
+              scaledRadius * 2 * dpr,
+              scaledRadius * 2 * dpr,
+              scaledX - scaledRadius,
+              scaledY - scaledRadius,
+              scaledRadius * 2,
+              scaledRadius * 2,
             )
-            ctx.restore()
           }
         }
       } else {
@@ -863,75 +836,58 @@ export function ImageMagnifierTool() {
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
           const scaledBlur = ann.blurAmount * Math.min(scaleX, scaleY)
-          const padding = scaledBlur * 2
           if (ann.shape === "rectangle") {
-            tempCanvas.width = (scaledWidth + padding * 2) * dpr
-            tempCanvas.height = (scaledHeight + padding * 2) * dpr
-            tempCtx.filter = `blur(${scaledBlur}px)`
+            tempCanvas.width = Math.ceil(scaledWidth * dpr)
+            tempCanvas.height = Math.ceil(scaledHeight * dpr)
             tempCtx.drawImage(
               image,
-              scaledX - scaledWidth / 2 - padding,
-              scaledY - scaledHeight / 2 - padding,
-              scaledWidth + padding * 2,
-              scaledHeight + padding * 2,
-              0,
-              0,
-              (scaledWidth + padding * 2) * dpr,
-              (scaledHeight + padding * 2) * dpr,
-            )
-            ctx.save()
-            ctx.beginPath()
-            ctx.roundRect(
               scaledX - scaledWidth / 2,
               scaledY - scaledHeight / 2,
               scaledWidth,
               scaledHeight,
-              8 * Math.min(scaleX, scaleY),
+              0,
+              0,
+              scaledWidth * dpr,
+              scaledHeight * dpr,
             )
-            ctx.clip()
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(scaledBlur * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (scaledWidth + padding * 2) * dpr,
-              (scaledHeight + padding * 2) * dpr,
-              scaledX - scaledWidth / 2 - padding,
-              scaledY - scaledHeight / 2 - padding,
-              scaledWidth + padding * 2,
-              scaledHeight + padding * 2,
+              scaledWidth * dpr,
+              scaledHeight * dpr,
+              scaledX - scaledWidth / 2,
+              scaledY - scaledHeight / 2,
+              scaledWidth,
+              scaledHeight,
             )
-            ctx.restore()
           } else {
-            tempCanvas.width = (scaledRadius * 2 + padding * 2) * dpr
-            tempCanvas.height = (scaledRadius * 2 + padding * 2) * dpr
-            tempCtx.filter = `blur(${scaledBlur}px)`
+            tempCanvas.width = Math.ceil(scaledRadius * 2 * dpr)
+            tempCanvas.height = Math.ceil(scaledRadius * 2 * dpr)
             tempCtx.drawImage(
               image,
-              scaledX - scaledRadius - padding,
-              scaledY - scaledRadius - padding,
-              scaledRadius * 2 + padding * 2,
-              scaledRadius * 2 + padding * 2,
+              scaledX - scaledRadius,
+              scaledY - scaledRadius,
+              scaledRadius * 2,
+              scaledRadius * 2,
               0,
               0,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              (scaledRadius * 2 + padding * 2) * dpr,
+              scaledRadius * 2 * dpr,
+              scaledRadius * 2 * dpr,
             )
-            ctx.save()
-            ctx.beginPath()
-            ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-            ctx.clip()
+            stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, Math.round(scaledBlur * dpr))
             ctx.drawImage(
               tempCanvas,
               0,
               0,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              (scaledRadius * 2 + padding * 2) * dpr,
-              scaledX - scaledRadius - padding,
-              scaledY - scaledRadius - padding,
-              scaledRadius * 2 + padding * 2,
-              scaledRadius * 2 + padding * 2,
+              scaledRadius * 2 * dpr,
+              scaledRadius * 2 * dpr,
+              scaledX - scaledRadius,
+              scaledY - scaledRadius,
+              scaledRadius * 2,
+              scaledRadius * 2,
             )
-            ctx.restore()
           }
         }
       } else {
