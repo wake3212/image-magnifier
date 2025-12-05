@@ -119,71 +119,100 @@ export function ImageMagnifierTool() {
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
-          const padding = Math.ceil(ann.blurAmount * dpr)
+          // Blur radius in canvas pixels
+          const blurRadius = Math.round(ann.blurAmount * dpr)
+          // Extra padding to avoid edge artifacts
+          const padding = blurRadius * 2
 
           if (ann.shape === "rectangle") {
-            const paddedWidth = Math.ceil(ann.width * dpr) + padding * 2
-            const paddedHeight = Math.ceil(ann.height * dpr) + padding * 2
+            const regionWidth = Math.ceil(ann.width * dpr)
+            const regionHeight = Math.ceil(ann.height * dpr)
+            const paddedWidth = regionWidth + padding * 2
+            const paddedHeight = regionHeight + padding * 2
             tempCanvas.width = paddedWidth
             tempCanvas.height = paddedHeight
 
-            // Draw larger area including padding
+            // Source coordinates in image space
+            const srcX = sourceX - (ann.width / 2) * scaleX
+            const srcY = sourceY - (ann.height / 2) * scaleY
+            const srcW = ann.width * scaleX
+            const srcH = ann.height * scaleY
+
+            // Expand source area for padding
+            const paddingInImageX = (padding / dpr) * scaleX
+            const paddingInImageY = (padding / dpr) * scaleY
+
             tempCtx.drawImage(
               image,
-              sourceX - (ann.width / 2) * scaleX - (padding / dpr) * scaleX,
-              sourceY - (ann.height / 2) * scaleY - (padding / dpr) * scaleY,
-              (ann.width + (padding * 2) / dpr) * scaleX,
-              (ann.height + (padding * 2) / dpr) * scaleY,
+              srcX - paddingInImageX,
+              srcY - paddingInImageY,
+              srcW + paddingInImageX * 2,
+              srcH + paddingInImageY * 2,
               0,
               0,
               paddedWidth,
               paddedHeight,
             )
-            // Apply stackblur to padded canvas
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, padding)
-            // Draw only the center portion (excluding padding)
+
+            console.log("[v0] blur rect:", { blurRadius, paddedWidth, paddedHeight, regionWidth, regionHeight })
+
+            // Apply stackblur with the actual blur radius
+            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+
+            // Draw only the center portion (excluding padding) back to main canvas
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              ann.width * dpr,
-              ann.height * dpr,
+              regionWidth,
+              regionHeight,
               ann.x - ann.width / 2,
               ann.y - ann.height / 2,
               ann.width,
               ann.height,
             )
           } else {
-            const paddedSize = Math.ceil(ann.radius * 2 * dpr) + padding * 2
+            const regionSize = Math.ceil(ann.radius * 2 * dpr)
+            const paddedSize = regionSize + padding * 2
             tempCanvas.width = paddedSize
             tempCanvas.height = paddedSize
 
-            // Draw larger area including padding
+            const srcX = sourceX - ann.radius * scaleX
+            const srcY = sourceY - ann.radius * scaleY
+            const srcSize = ann.radius * 2 * scaleX
+
+            const paddingInImage = (padding / dpr) * scaleX
+
             tempCtx.drawImage(
               image,
-              sourceX - ann.radius * scaleX - (padding / dpr) * scaleX,
-              sourceY - ann.radius * scaleY - (padding / dpr) * scaleY,
-              (ann.radius * 2 + (padding * 2) / dpr) * scaleX,
-              (ann.radius * 2 + (padding * 2) / dpr) * scaleY,
+              srcX - paddingInImage,
+              srcY - paddingInImage,
+              srcSize + paddingInImage * 2,
+              srcSize + paddingInImage * 2,
               0,
               0,
               paddedSize,
               paddedSize,
             )
-            // Apply stackblur to padded canvas
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, padding)
-            // Draw only the center portion (excluding padding)
+
+            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+
+            ctx.save()
+            ctx.beginPath()
+            ctx.arc(ann.x, ann.y, ann.radius, 0, Math.PI * 2)
+            ctx.clip()
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              ann.radius * 2 * dpr,
-              ann.radius * 2 * dpr,
+              regionSize,
+              regionSize,
               ann.x - ann.radius,
               ann.y - ann.radius,
               ann.radius * 2,
               ann.radius * 2,
             )
+            ctx.restore()
           }
         }
       } else {
@@ -666,61 +695,69 @@ export function ImageMagnifierTool() {
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
-          const scaledBlur = ann.blurAmount * Math.min(scaleX, scaleY)
-          const padding = Math.ceil(scaledBlur * dpr)
+          const scaledBlur = Math.round(ann.blurAmount * Math.min(scaleX, scaleY) * dpr)
+          const blurRadius = Math.min(scaledBlur, 254) // Cap at 254 for stackblur table
+          const padding = blurRadius * 2
 
           if (ann.shape === "rectangle") {
-            const paddedWidth = Math.ceil(scaledWidth * dpr) + padding * 2
-            const paddedHeight = Math.ceil(scaledHeight * dpr) + padding * 2
+            const regionWidth = Math.ceil(scaledWidth * dpr)
+            const regionHeight = Math.ceil(scaledHeight * dpr)
+            const paddedWidth = regionWidth + padding * 2
+            const paddedHeight = regionHeight + padding * 2
             tempCanvas.width = paddedWidth
             tempCanvas.height = paddedHeight
 
+            const paddingInImage = padding / dpr
+
             tempCtx.drawImage(
               image,
-              scaledX - scaledWidth / 2 - padding / dpr,
-              scaledY - scaledHeight / 2 - padding / dpr,
-              scaledWidth + (padding * 2) / dpr,
-              scaledHeight + (padding * 2) / dpr,
+              scaledX - scaledWidth / 2 - paddingInImage,
+              scaledY - scaledHeight / 2 - paddingInImage,
+              scaledWidth + paddingInImage * 2,
+              scaledHeight + paddingInImage * 2,
               0,
               0,
               paddedWidth,
               paddedHeight,
             )
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, padding)
+            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              scaledWidth * dpr,
-              scaledHeight * dpr,
+              regionWidth,
+              regionHeight,
               scaledX - scaledWidth / 2,
               scaledY - scaledHeight / 2,
               scaledWidth,
               scaledHeight,
             )
           } else {
-            const paddedSize = Math.ceil(scaledRadius * 2 * dpr) + padding * 2
+            const regionSize = Math.ceil(scaledRadius * 2 * dpr)
+            const paddedSize = regionSize + padding * 2
             tempCanvas.width = paddedSize
             tempCanvas.height = paddedSize
 
+            const paddingInImage = padding / dpr
+
             tempCtx.drawImage(
               image,
-              scaledX - scaledRadius - padding / dpr,
-              scaledY - scaledRadius - padding / dpr,
-              scaledRadius * 2 + (padding * 2) / dpr,
-              scaledRadius * 2 + (padding * 2) / dpr,
+              scaledX - scaledRadius - paddingInImage,
+              scaledY - scaledRadius - paddingInImage,
+              scaledRadius * 2 + paddingInImage * 2,
+              scaledRadius * 2 + paddingInImage * 2,
               0,
               0,
               paddedSize,
               paddedSize,
             )
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, padding)
+            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              scaledRadius * 2 * dpr,
-              scaledRadius * 2 * dpr,
+              regionSize,
+              regionSize,
               scaledX - scaledRadius,
               scaledY - scaledRadius,
               scaledRadius * 2,
@@ -853,61 +890,69 @@ export function ImageMagnifierTool() {
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
         if (tempCtx) {
-          const scaledBlur = ann.blurAmount * Math.min(scaleX, scaleY)
-          const padding = Math.ceil(scaledBlur * dpr)
+          const scaledBlur = Math.round(ann.blurAmount * Math.min(scaleX, scaleY) * dpr)
+          const blurRadius = Math.min(scaledBlur, 254) // Cap at 254 for stackblur table
+          const padding = blurRadius * 2
 
           if (ann.shape === "rectangle") {
-            const paddedWidth = Math.ceil(scaledWidth * dpr) + padding * 2
-            const paddedHeight = Math.ceil(scaledHeight * dpr) + padding * 2
+            const regionWidth = Math.ceil(scaledWidth * dpr)
+            const regionHeight = Math.ceil(scaledHeight * dpr)
+            const paddedWidth = regionWidth + padding * 2
+            const paddedHeight = regionHeight + padding * 2
             tempCanvas.width = paddedWidth
             tempCanvas.height = paddedHeight
 
+            const paddingInImage = padding / dpr
+
             tempCtx.drawImage(
               image,
-              scaledX - scaledWidth / 2 - padding / dpr,
-              scaledY - scaledHeight / 2 - padding / dpr,
-              scaledWidth + (padding * 2) / dpr,
-              scaledHeight + (padding * 2) / dpr,
+              scaledX - scaledWidth / 2 - paddingInImage,
+              scaledY - scaledHeight / 2 - paddingInImage,
+              scaledWidth + paddingInImage * 2,
+              scaledHeight + paddingInImage * 2,
               0,
               0,
               paddedWidth,
               paddedHeight,
             )
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, padding)
+            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              scaledWidth * dpr,
-              scaledHeight * dpr,
+              regionWidth,
+              regionHeight,
               scaledX - scaledWidth / 2,
               scaledY - scaledHeight / 2,
               scaledWidth,
               scaledHeight,
             )
           } else {
-            const paddedSize = Math.ceil(scaledRadius * 2 * dpr) + padding * 2
+            const regionSize = Math.ceil(scaledRadius * 2 * dpr)
+            const paddedSize = regionSize + padding * 2
             tempCanvas.width = paddedSize
             tempCanvas.height = paddedSize
 
+            const paddingInImage = padding / dpr
+
             tempCtx.drawImage(
               image,
-              scaledX - scaledRadius - padding / dpr,
-              scaledY - scaledRadius - padding / dpr,
-              scaledRadius * 2 + (padding * 2) / dpr,
-              scaledRadius * 2 + (padding * 2) / dpr,
+              scaledX - scaledRadius - paddingInImage,
+              scaledY - scaledRadius - paddingInImage,
+              scaledRadius * 2 + paddingInImage * 2,
+              scaledRadius * 2 + paddingInImage * 2,
               0,
               0,
               paddedSize,
               paddedSize,
             )
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, padding)
+            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
             ctx.drawImage(
               tempCanvas,
               padding,
               padding,
-              scaledRadius * 2 * dpr,
-              scaledRadius * 2 * dpr,
+              regionSize,
+              regionSize,
               scaledX - scaledRadius,
               scaledY - scaledRadius,
               scaledRadius * 2,
