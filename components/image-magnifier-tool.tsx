@@ -5,8 +5,79 @@ import { useState, useRef, useCallback, useEffect } from "react"
 import { Upload, Download, Copy, Check, Sun, Moon, Circle, Square, Trash2, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { stackBlurCanvas } from "@/lib/stackblur"
+
+function drawImageWithEdgeExtension(
+  tempCtx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  srcX: number,
+  srcY: number,
+  srcW: number,
+  srcH: number,
+  destW: number,
+  destH: number,
+) {
+  // Clamp source coordinates to image bounds
+  const imgW = image.naturalWidth
+  const imgH = image.naturalHeight
+
+  // Calculate the valid region we can actually draw from the image
+  const validSrcX = Math.max(0, srcX)
+  const validSrcY = Math.max(0, srcY)
+  const validSrcRight = Math.min(imgW, srcX + srcW)
+  const validSrcBottom = Math.min(imgH, srcY + srcH)
+  const validSrcW = validSrcRight - validSrcX
+  const validSrcH = validSrcBottom - validSrcY
+
+  // If completely outside image, fill with edge color
+  if (validSrcW <= 0 || validSrcH <= 0) {
+    return
+  }
+
+  // Calculate where in the destination this valid region maps to
+  const scaleX = destW / srcW
+  const scaleY = destH / srcH
+  const destX = (validSrcX - srcX) * scaleX
+  const destY = (validSrcY - srcY) * scaleY
+  const destValidW = validSrcW * scaleX
+  const destValidH = validSrcH * scaleY
+
+  // Draw the valid portion of the image
+  tempCtx.drawImage(image, validSrcX, validSrcY, validSrcW, validSrcH, destX, destY, destValidW, destValidH)
+
+  // Now extend edges to fill the padding areas
+  // This prevents blur fade-out at image boundaries
+
+  // Left edge extension
+  if (srcX < 0 && destX > 0) {
+    // Sample a 1px column from the left edge of valid area and stretch it
+    tempCtx.drawImage(tempCtx.canvas, destX, destY, 1, destValidH, 0, destY, destX, destValidH)
+  }
+
+  // Right edge extension
+  if (srcX + srcW > imgW) {
+    const rightEdgeX = destX + destValidW
+    const rightFillW = destW - rightEdgeX
+    if (rightFillW > 0) {
+      tempCtx.drawImage(tempCtx.canvas, rightEdgeX - 1, destY, 1, destValidH, rightEdgeX, destY, rightFillW, destValidH)
+    }
+  }
+
+  // Top edge extension
+  if (srcY < 0 && destY > 0) {
+    tempCtx.drawImage(tempCtx.canvas, 0, destY, destW, 1, 0, 0, destW, destY)
+  }
+
+  // Bottom edge extension
+  if (srcY + srcH > imgH) {
+    const bottomEdgeY = destY + destValidH
+    const bottomFillH = destH - bottomEdgeY
+    if (bottomFillH > 0) {
+      tempCtx.drawImage(tempCtx.canvas, 0, bottomEdgeY - 1, destW, 1, 0, bottomEdgeY, destW, bottomFillH)
+    }
+  }
+}
 
 interface Annotation {
   id: string
@@ -117,7 +188,7 @@ export function ImageMagnifierTool() {
 
       if (ann.type === "blur") {
         const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d")
+        const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
         if (tempCtx) {
           // Cap blur radius for performance with Gaussian blur
           const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
@@ -142,14 +213,13 @@ export function ImageMagnifierTool() {
             const paddingInImageX = padding * scaleX
             const paddingInImageY = padding * scaleY
 
-            tempCtx.drawImage(
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               srcX - paddingInImageX,
               srcY - paddingInImageY,
               srcW + paddingInImageX * 2,
               srcH + paddingInImageY * 2,
-              0,
-              0,
               paddedWidth,
               paddedHeight,
             )
@@ -181,14 +251,13 @@ export function ImageMagnifierTool() {
 
             const paddingInImage = padding * scaleX
 
-            tempCtx.drawImage(
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               srcX - paddingInImage,
               srcY - paddingInImage,
               srcSize + paddingInImage * 2,
               srcSize + paddingInImage * 2,
-              0,
-              0,
               paddedSize,
               paddedSize,
             )
@@ -707,17 +776,18 @@ export function ImageMagnifierTool() {
 
             const paddingInImage = padding / dpr
 
-            tempCtx.drawImage(
+            // Use the new helper function
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               scaledX - scaledWidth / 2 - paddingInImage,
               scaledY - scaledHeight / 2 - paddingInImage,
               scaledWidth + paddingInImage * 2,
               scaledHeight + paddingInImage * 2,
-              0,
-              0,
               paddedWidth,
               paddedHeight,
             )
+
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
 
             const debugCtx = tempCanvas.getContext("2d")
@@ -751,17 +821,18 @@ export function ImageMagnifierTool() {
 
             const paddingInImage = padding / dpr
 
-            tempCtx.drawImage(
+            // Use the new helper function
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               scaledX - scaledRadius - paddingInImage,
               scaledY - scaledRadius - paddingInImage,
               scaledRadius * 2 + paddingInImage * 2,
               scaledRadius * 2 + paddingInImage * 2,
-              0,
-              0,
               paddedSize,
               paddedSize,
             )
+
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
 
             const debugCtx = tempCanvas.getContext("2d")
@@ -928,17 +999,18 @@ export function ImageMagnifierTool() {
 
             const paddingInImage = padding / dpr
 
-            tempCtx.drawImage(
+            // Use the new helper function
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               scaledX - scaledWidth / 2 - paddingInImage,
               scaledY - scaledHeight / 2 - paddingInImage,
               scaledWidth + paddingInImage * 2,
               scaledHeight + paddingInImage * 2,
-              0,
-              0,
               paddedWidth,
               paddedHeight,
             )
+
             stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
 
             const debugCtx = tempCanvas.getContext("2d")
@@ -972,17 +1044,18 @@ export function ImageMagnifierTool() {
 
             const paddingInImage = padding / dpr
 
-            tempCtx.drawImage(
+            // Use the new helper function
+            drawImageWithEdgeExtension(
+              tempCtx,
               image,
               scaledX - scaledRadius - paddingInImage,
               scaledY - scaledRadius - paddingInImage,
               scaledRadius * 2 + paddingInImage * 2,
               scaledRadius * 2 + paddingInImage * 2,
-              0,
-              0,
               paddedSize,
               paddedSize,
             )
+
             stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
 
             const debugCtx = tempCanvas.getContext("2d")
