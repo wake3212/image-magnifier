@@ -1,11 +1,11 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useCallback, useEffect } from "react"
-import { Upload, Download, Copy, Check, Sun, Moon, Circle, Square, Trash2, EyeOff } from "lucide-react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Upload, Circle, Square, Copy, Download, Trash2, Sun, Moon, Check, EyeOff, Grid3X3, Waves } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { stackBlurCanvas } from "@/lib/stackblur"
 
 function drawImageWithEdgeExtension(
@@ -91,6 +91,7 @@ interface Annotation {
   darkBorder: boolean
   type: "magnifier" | "blur"
   blurAmount: number
+  blurType: "gaussian" | "mosaic"
 }
 
 export function ImageMagnifierTool() {
@@ -173,7 +174,7 @@ export function ImageMagnifierTool() {
     (ann: Annotation, forceRecalculate = false): ImageData | null => {
       if (ann.type !== "blur" || !image) return null
 
-      const cacheKey = `${ann.id}-${ann.blurAmount}-${Math.round(ann.width)}-${Math.round(ann.height)}-${Math.round(ann.radius)}`
+      const cacheKey = `${ann.id}-${ann.blurAmount}-${ann.blurType}-${Math.round(ann.width)}-${Math.round(ann.height)}-${Math.round(ann.radius)}`
 
       if (!forceRecalculate && blurCacheRef.current.has(cacheKey)) {
         return blurCacheRef.current.get(cacheKey)!
@@ -249,7 +250,11 @@ export function ImageMagnifierTool() {
         )
       }
 
-      stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, blurRadius)
+      if (ann.blurType === "mosaic") {
+        applyMosaic(tempCtx, tempCanvas.width, tempCanvas.height, Math.max(4, Math.floor(blurRadius / 2)))
+      } else {
+        stackBlurCanvas(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, blurRadius)
+      }
 
       const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height)
 
@@ -618,9 +623,55 @@ export function ImageMagnifierTool() {
       darkBorder: darkBorder,
       type,
       blurAmount: 20,
+      blurType: "gaussian",
     }
     setAnnotations([...annotations, newAnnotation])
     setSelectedAnnotation(newAnnotation.id)
+  }
+
+  const applyMosaic = (ctx: CanvasRenderingContext2D, width: number, height: number, blockSize: number) => {
+    const imageData = ctx.getImageData(0, 0, width, height)
+    const data = imageData.data
+
+    for (let y = 0; y < height; y += blockSize) {
+      for (let x = 0; x < width; x += blockSize) {
+        let r = 0,
+          g = 0,
+          b = 0,
+          a = 0,
+          count = 0
+
+        // Calculate average color for this block
+        for (let dy = 0; dy < blockSize && y + dy < height; dy++) {
+          for (let dx = 0; dx < blockSize && x + dx < width; dx++) {
+            const idx = ((y + dy) * width + (x + dx)) * 4
+            r += data[idx]
+            g += data[idx + 1]
+            b += data[idx + 2]
+            a += data[idx + 3]
+            count++
+          }
+        }
+
+        r = Math.round(r / count)
+        g = Math.round(g / count)
+        b = Math.round(b / count)
+        a = Math.round(a / count)
+
+        // Fill block with average color
+        for (let dy = 0; dy < blockSize && y + dy < height; dy++) {
+          for (let dx = 0; dx < blockSize && x + dx < width; dx++) {
+            const idx = ((y + dy) * width + (x + dx)) * 4
+            data[idx] = r
+            data[idx + 1] = g
+            data[idx + 2] = b
+            data[idx + 3] = a
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0)
   }
 
   const getCanvasCoords = (e: React.MouseEvent) => {
@@ -950,7 +1001,12 @@ export function ImageMagnifierTool() {
               paddedHeight,
             )
 
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+            // Apply blur or mosaic based on blurType
+            if (ann.blurType === "mosaic") {
+              applyMosaic(tempCtx, paddedWidth, paddedHeight, Math.max(4, Math.floor(blurRadius / 2)))
+            } else {
+              stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+            }
 
             const debugCtx = tempCanvas.getContext("2d")
             if (debugCtx) {
@@ -995,7 +1051,12 @@ export function ImageMagnifierTool() {
               paddedSize,
             )
 
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+            // Apply blur or mosaic based on blurType
+            if (ann.blurType === "mosaic") {
+              applyMosaic(tempCtx, paddedSize, paddedSize, Math.max(4, Math.floor(blurRadius / 2)))
+            } else {
+              stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+            }
 
             const debugCtx = tempCanvas.getContext("2d")
             if (debugCtx) {
@@ -1173,7 +1234,12 @@ export function ImageMagnifierTool() {
               paddedHeight,
             )
 
-            stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+            // Apply blur or mosaic based on blurType
+            if (ann.blurType === "mosaic") {
+              applyMosaic(tempCtx, paddedWidth, paddedHeight, Math.max(4, Math.floor(blurRadius / 2)))
+            } else {
+              stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
+            }
 
             const debugCtx = tempCanvas.getContext("2d")
             if (debugCtx) {
@@ -1218,7 +1284,12 @@ export function ImageMagnifierTool() {
               paddedSize,
             )
 
-            stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+            // Apply blur or mosaic based on blurType
+            if (ann.blurType === "mosaic") {
+              applyMosaic(tempCtx, paddedSize, paddedSize, Math.max(4, Math.floor(blurRadius / 2)))
+            } else {
+              stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
+            }
 
             const debugCtx = tempCanvas.getContext("2d")
             if (debugCtx) {
@@ -1350,6 +1421,10 @@ export function ImageMagnifierTool() {
 
   const handleBlurAmountChange = useCallback((id: string, value: number) => {
     setAnnotations((prev) => prev.map((ann) => (ann.id === id ? { ...ann, blurAmount: value } : ann)))
+  }, [])
+
+  const handleBlurTypeChange = useCallback((id: string, type: "gaussian" | "mosaic") => {
+    setAnnotations((prev) => prev.map((ann) => (ann.id === id ? { ...ann, blurType: type } : ann)))
   }, [])
 
   const handleBlurAmountChangeEnd = useCallback(
@@ -1566,8 +1641,67 @@ export function ImageMagnifierTool() {
                           }}
                         />
                         <span className="text-xs text-muted-foreground w-8">{ann.blurAmount}px</span>
+
+                        <div className="w-px h-4 bg-black/10" />
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => {
+                                setAnnotations((prev) =>
+                                  prev.map((m) =>
+                                    m.id === ann.id
+                                      ? { ...m, blurType: ann.blurType === "gaussian" ? "mosaic" : "gaussian" }
+                                      : m,
+                                  ),
+                                )
+                                // Force recalculate blur cache
+                                setTimeout(() => {
+                                  const updatedAnn = annotations.find((a) => a.id === ann.id)
+                                  if (updatedAnn) {
+                                    getCachedBlur(
+                                      { ...updatedAnn, blurType: ann.blurType === "gaussian" ? "mosaic" : "gaussian" },
+                                      true,
+                                    )
+                                    requestAnimationFrame(drawCanvas)
+                                  }
+                                }, 0)
+                              }}
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 rounded-full hover:bg-black/10"
+                            >
+                              {ann.blurType === "gaussian" ? (
+                                <Waves className="h-3 w-3" />
+                              ) : (
+                                <Grid3X3 className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{ann.blurType === "gaussian" ? "Gaussian Blur" : "Mosaic"}</TooltipContent>
+                        </Tooltip>
+
+                        <div className="w-px h-4 bg-black/10" />
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => {
+                                setAnnotations((prev) => prev.filter((m) => m.id !== ann.id))
+                                setSelectedAnnotation(null)
+                              }}
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 rounded-full hover:bg-red-100 text-red-500"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete</TooltipContent>
+                        </Tooltip>
                       </>
                     ) : (
+                      // Magnifier annotation menu - unchanged
                       <>
                         <Slider
                           value={[ann.zoom]}
@@ -1582,47 +1716,47 @@ export function ImageMagnifierTool() {
                         <span className="text-[10px] font-medium text-neutral-600 w-7 text-center tabular-nums">
                           {ann.zoom.toFixed(1)}x
                         </span>
+
+                        <div className="w-px h-4 bg-black/10" />
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => {
+                                setAnnotations((prev) =>
+                                  prev.map((m) => (m.id === ann.id ? { ...m, darkBorder: !ann.darkBorder } : m)),
+                                )
+                              }}
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 rounded-full hover:bg-black/10"
+                            >
+                              {ann.darkBorder ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{ann.darkBorder ? "Light Border" : "Dark Border"}</TooltipContent>
+                        </Tooltip>
+
+                        <div className="w-px h-4 bg-black/10" />
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => {
+                                setAnnotations((prev) => prev.filter((m) => m.id !== ann.id))
+                                setSelectedAnnotation(null)
+                              }}
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 rounded-full hover:bg-red-100 text-red-500"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete</TooltipContent>
+                        </Tooltip>
                       </>
                     )}
-
-                    <div className="w-px h-4 bg-black/10" />
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={() => {
-                            setAnnotations((prev) =>
-                              prev.map((m) => (m.id === ann.id ? { ...m, darkBorder: !ann.darkBorder } : m)),
-                            )
-                          }}
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 rounded-full hover:bg-black/10"
-                        >
-                          {ann.darkBorder ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{ann.darkBorder ? "Light Border" : "Dark Border"}</TooltipContent>
-                    </Tooltip>
-
-                    <div className="w-px h-4 bg-black/10" />
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={() => {
-                            setAnnotations((prev) => prev.filter((m) => m.id !== ann.id))
-                            setSelectedAnnotation(null)
-                          }}
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 rounded-full hover:bg-red-100 text-red-500"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete</TooltipContent>
-                    </Tooltip>
                   </div>
                 </div>
               )
