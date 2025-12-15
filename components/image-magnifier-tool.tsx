@@ -20,7 +20,6 @@ import {
   Blend,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { stackBlurCanvas } from "@/lib/stackblur"
 
 // Helper function to apply Gaussian blur to ImageData
 const applyGaussianBlur = (imageData: ImageData, radius: number) => {
@@ -112,6 +111,8 @@ function drawImageWithEdgeExtension(
   destW: number,
   destH: number,
 ) {
+  tempCtx.clearRect(0, 0, destW, destH)
+
   // Clamp source coordinates to image bounds
   const imgW = image.naturalWidth
   const imgH = image.naturalHeight
@@ -531,6 +532,7 @@ export function ImageMagnifierTool() {
   } | null>(null)
   const [darkBorder, setDarkBorder] = useState(false)
   const [selectedBorderColor, setSelectedBorderColor] = useState<string>("#3B82F6")
+  const [isCopying, setIsCopying] = useState(false) // Added state for copying
 
   const [isPending, startTransition] = useTransition()
   // Remove: blurCacheRef, isInteractingRef, lastDrawTimeRef
@@ -694,221 +696,313 @@ export function ImageMagnifierTool() {
     [image, canvasDisplaySize],
   )
 
+  // targetScale: ratio of target canvas size to display size (1 for preview, scaleX/scaleY for export)
+  // showSelection: whether to show selection outline (true for preview, false for export)
+  const renderToCanvas = useCallback(
+    (
+      targetCanvas: HTMLCanvasElement,
+      targetWidth: number,
+      targetHeight: number,
+      displayWidth: number,
+      displayHeight: number,
+      showSelection = true,
+    ) => {
+      if (!image) return
+
+      const ctx = targetCanvas.getContext("2d", { willReadFrequently: true })
+      if (!ctx) return
+
+      // Scale factor from display coordinates to target coordinates
+      const scale = targetWidth / displayWidth
+
+      const scaleX = image.naturalWidth / displayWidth
+      const scaleY = image.naturalHeight / displayHeight
+
+      const dpr = window.devicePixelRatio || 1
+      const effectScale = Math.min(scaleX, scaleY) * (scale / dpr)
+
+      ctx.clearRect(0, 0, targetWidth, targetHeight)
+      ctx.drawImage(image, 0, 0, targetWidth, targetHeight)
+
+      annotations.forEach((ann) => {
+        ctx.save()
+
+        // Scale annotation coordinates to target canvas
+        const scaledX = ann.x * scale
+        const scaledY = ann.y * scale
+        const scaledWidth = ann.width * scale
+        const scaledHeight = ann.height * scale
+        const scaledRadius = ann.radius * scale
+
+        ctx.beginPath()
+        if (ann.shape === "rectangle") {
+          const halfWidth = scaledWidth / 2
+          const halfHeight = scaledHeight / 2
+          ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, scaledWidth, scaledHeight, 8 * scale)
+        } else {
+          ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
+        }
+        ctx.clip()
+
+        const sourceX = ann.x * scaleX
+        const sourceY = ann.y * scaleY
+
+        if (ann.type === "blur") {
+          const blurRadius = Math.min(Math.round(ann.blurAmount * effectScale), 40 * effectScale)
+          const padding = blurRadius * 2
+
+          const tempCanvas = document.createElement("canvas")
+          const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
+          if (tempCtx) {
+            if (ann.shape === "rectangle") {
+              const regionWidth = Math.ceil(scaledWidth)
+              const regionHeight = Math.ceil(scaledHeight)
+              const paddedWidth = regionWidth + padding * 2
+              const paddedHeight = regionHeight + padding * 2
+
+              tempCanvas.width = paddedWidth
+              tempCanvas.height = paddedHeight
+
+              const srcX = (ann.x - ann.width / 2) * scaleX - (padding / scale) * scaleX
+              const srcY = (ann.y - ann.height / 2) * scaleY - (padding / scale) * scaleY
+              const srcW = (paddedWidth / scale) * scaleX
+              const srcH = (paddedHeight / scale) * scaleY
+
+              drawImageWithEdgeExtension(tempCtx, image, srcX, srcY, srcW, srcH, paddedWidth, paddedHeight)
+
+              const imageData = tempCtx.getImageData(0, 0, paddedWidth, paddedHeight)
+
+              if (ann.blurType === "mosaic") {
+                applyMosaic(imageData, Math.max(8 * effectScale, Math.floor(blurRadius / 2)))
+              } else {
+                applyGaussianBlur(imageData, blurRadius)
+              }
+
+              tempCtx.putImageData(imageData, 0, 0)
+              ctx.drawImage(
+                tempCanvas,
+                padding,
+                padding,
+                regionWidth,
+                regionHeight,
+                scaledX - scaledWidth / 2,
+                scaledY - scaledHeight / 2,
+                scaledWidth,
+                scaledHeight,
+              )
+            } else {
+              const diameter = Math.ceil(scaledRadius * 2)
+              const paddedSize = diameter + padding * 2
+
+              tempCanvas.width = paddedSize
+              tempCanvas.height = paddedSize
+
+              const srcX = (ann.x - ann.radius) * scaleX - (padding / scale) * scaleX
+              const srcY = (ann.y - ann.radius) * scaleY - (padding / scale) * scaleY
+              const srcW = (paddedSize / scale) * scaleX
+              const srcH = (paddedSize / scale) * scaleY
+
+              drawImageWithEdgeExtension(tempCtx, image, srcX, srcY, srcW, srcH, paddedSize, paddedSize)
+
+              const imageData = tempCtx.getImageData(0, 0, paddedSize, paddedSize)
+
+              if (ann.blurType === "mosaic") {
+                applyMosaic(imageData, Math.max(8 * effectScale, Math.floor(blurRadius / 2)))
+              } else {
+                applyGaussianBlur(imageData, blurRadius)
+              }
+
+              tempCtx.putImageData(imageData, 0, 0)
+              ctx.drawImage(
+                tempCanvas,
+                padding,
+                padding,
+                diameter,
+                diameter,
+                scaledX - scaledRadius,
+                scaledY - scaledRadius,
+                scaledRadius * 2,
+                scaledRadius * 2,
+              )
+            }
+          }
+        } else if (ann.type === "dither") {
+          const ditherScaleFactor = ann.ditherScale * effectScale
+
+          const tempCanvas = document.createElement("canvas")
+          const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
+          if (tempCtx) {
+            if (ann.shape === "rectangle") {
+              const regionWidth = Math.ceil(scaledWidth)
+              const regionHeight = Math.ceil(scaledHeight)
+
+              tempCanvas.width = regionWidth
+              tempCanvas.height = regionHeight
+
+              const srcX = (ann.x - ann.width / 2) * scaleX
+              const srcY = (ann.y - ann.height / 2) * scaleY
+              const srcW = ann.width * scaleX
+              const srcH = ann.height * scaleY
+
+              tempCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, regionWidth, regionHeight)
+
+              const imageData = tempCtx.getImageData(0, 0, regionWidth, regionHeight)
+              applyDither(imageData, ann.ditherMethod, ditherScaleFactor, ann.ditherColorMode)
+              tempCtx.putImageData(imageData, 0, 0)
+
+              ctx.drawImage(
+                tempCanvas,
+                0,
+                0,
+                regionWidth,
+                regionHeight,
+                scaledX - scaledWidth / 2,
+                scaledY - scaledHeight / 2,
+                scaledWidth,
+                scaledHeight,
+              )
+            } else {
+              const diameter = Math.ceil(scaledRadius * 2)
+
+              tempCanvas.width = diameter
+              tempCanvas.height = diameter
+
+              const srcX = (ann.x - ann.radius) * scaleX
+              const srcY = (ann.y - ann.radius) * scaleY
+              const srcW = ann.radius * 2 * scaleX
+              const srcH = ann.radius * 2 * scaleY
+
+              tempCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, diameter, diameter)
+
+              const imageData = tempCtx.getImageData(0, 0, diameter, diameter)
+              applyDither(imageData, ann.ditherMethod, ditherScaleFactor, ann.ditherColorMode)
+
+              tempCtx.putImageData(imageData, 0, 0)
+              ctx.drawImage(
+                tempCanvas,
+                0,
+                0,
+                diameter,
+                diameter,
+                scaledX - scaledRadius,
+                scaledY - scaledRadius,
+                scaledRadius * 2,
+                scaledRadius * 2,
+              )
+            }
+          }
+        } else {
+          // Magnifier
+          if (ann.shape === "rectangle") {
+            const zoomWidth = ann.width / 2 / ann.zoom
+            const zoomHeight = ann.height / 2 / ann.zoom
+            ctx.drawImage(
+              image,
+              sourceX - zoomWidth * scaleX,
+              sourceY - zoomHeight * scaleY,
+              zoomWidth * 2 * scaleX,
+              zoomHeight * 2 * scaleY,
+              scaledX - scaledWidth / 2,
+              scaledY - scaledHeight / 2,
+              scaledWidth,
+              scaledHeight,
+            )
+          } else {
+            const zoomRadius = ann.radius / ann.zoom
+            ctx.drawImage(
+              image,
+              sourceX - zoomRadius * scaleX,
+              sourceY - zoomRadius * scaleY,
+              zoomRadius * 2 * scaleX,
+              zoomRadius * 2 * scaleY,
+              scaledX - scaledRadius,
+              scaledY - scaledRadius,
+              scaledRadius * 2,
+              scaledRadius * 2,
+            )
+          }
+        }
+
+        ctx.restore()
+
+        // Draw border for magnifier
+        if (ann.type === "magnifier") {
+          ctx.save()
+          ctx.beginPath()
+          if (ann.shape === "rectangle") {
+            const halfWidth = scaledWidth / 2 + scale
+            const halfHeight = scaledHeight / 2 + scale
+            ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, halfWidth * 2, halfHeight * 2, 8 * scale)
+          } else {
+            ctx.arc(scaledX, scaledY, scaledRadius + scale, 0, Math.PI * 2)
+          }
+          ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
+          ctx.shadowBlur = 15 * scale
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 4 * scale
+          ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
+          ctx.lineWidth = 2 * scale
+          ctx.stroke()
+          ctx.restore()
+
+          ctx.beginPath()
+          if (ann.shape === "rectangle") {
+            const halfWidth = scaledWidth / 2 + scale
+            const halfHeight = scaledHeight / 2 + scale
+            ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, halfWidth * 2, halfHeight * 2, 8 * scale)
+          } else {
+            ctx.arc(scaledX, scaledY, scaledRadius + scale, 0, Math.PI * 2)
+          }
+          ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
+          ctx.lineWidth = scale
+          ctx.stroke()
+        }
+
+        // Selection outline (only for preview)
+        if (showSelection && selectedAnnotation === ann.id) {
+          ctx.save()
+          ctx.beginPath()
+          if (ann.shape === "rectangle") {
+            const halfWidth = scaledWidth / 2 + 4 * scale
+            const halfHeight = scaledHeight / 2 + 4 * scale
+            ctx.roundRect(scaledX - halfWidth, scaledY - halfHeight, halfWidth * 2, halfHeight * 2, 10 * scale)
+          } else {
+            ctx.arc(scaledX, scaledY, scaledRadius + 4 * scale, 0, Math.PI * 2)
+          }
+          ctx.strokeStyle = "#3b82f6"
+          ctx.lineWidth = 2 * scale
+          ctx.stroke()
+          ctx.restore()
+
+          // Resize handle
+          let handleX: number, handleY: number
+          if (ann.shape === "rectangle") {
+            handleX = scaledX + scaledWidth / 2 + 4 * scale
+            handleY = scaledY + scaledHeight / 2 + 4 * scale
+          } else {
+            const outlineRadius = scaledRadius + 4 * scale
+            handleX = scaledX + outlineRadius * Math.cos(Math.PI / 4)
+            handleY = scaledY + outlineRadius * Math.sin(Math.PI / 4)
+          }
+          ctx.beginPath()
+          ctx.arc(handleX, handleY, 8 * scale, 0, Math.PI * 2)
+          ctx.fillStyle = "white"
+          ctx.fill()
+          ctx.strokeStyle = "#3b82f6"
+          ctx.lineWidth = 2 * scale
+          ctx.stroke()
+        }
+      })
+    },
+    [image, annotations, selectedAnnotation],
+  )
+
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !image || canvasDisplaySize.width === 0) return
+    if (!canvas || !image) return
 
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    const dpr = window.devicePixelRatio || 1
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, canvasDisplaySize.width, canvasDisplaySize.height)
-    ctx.drawImage(image, 0, 0, canvasDisplaySize.width, canvasDisplaySize.height)
-
-    annotations.forEach((ann) => {
-      ctx.save()
-
-      ctx.beginPath()
-      if (ann.shape === "rectangle") {
-        const halfWidth = ann.width / 2
-        const halfHeight = ann.height / 2
-        ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, ann.width, ann.height, 8)
-      } else {
-        ctx.arc(ann.x, ann.y, ann.radius, 0, Math.PI * 2)
-      }
-      ctx.clip()
-
-      const scaleX = image.naturalWidth / canvasDisplaySize.width
-      const scaleY = image.naturalHeight / canvasDisplaySize.height
-      const sourceX = ann.x * scaleX
-      const sourceY = ann.y * scaleY
-
-      if (ann.type === "blur") {
-        // ... existing blur code ...
-        const blurRadius = Math.min(Math.round(ann.blurAmount), 40)
-        const padding = blurRadius * 2
-
-        const blurredData = calculateBlur(ann)
-
-        if (blurredData) {
-          const tempCanvas = document.createElement("canvas")
-          tempCanvas.width = blurredData.width
-          tempCanvas.height = blurredData.height
-          const tempCtx = tempCanvas.getContext("2d")
-          if (tempCtx) {
-            tempCtx.putImageData(blurredData, 0, 0)
-
-            if (ann.shape === "rectangle") {
-              ctx.drawImage(
-                tempCanvas,
-                padding,
-                padding,
-                ann.width,
-                ann.height,
-                ann.x - ann.width / 2,
-                ann.y - ann.height / 2,
-                ann.width,
-                ann.height,
-              )
-            } else {
-              ctx.drawImage(
-                tempCanvas,
-                padding,
-                padding,
-                ann.radius * 2,
-                ann.radius * 2,
-                ann.x - ann.radius,
-                ann.y - ann.radius,
-                ann.radius * 2,
-                ann.radius * 2,
-              )
-            }
-          }
-        }
-      } else if (ann.type === "dither") {
-        const ditheredData = calculateDither(ann)
-
-        if (ditheredData) {
-          const tempCanvas = document.createElement("canvas")
-          tempCanvas.width = ditheredData.width
-          tempCanvas.height = ditheredData.height
-          const tempCtx = tempCanvas.getContext("2d")
-          if (tempCtx) {
-            tempCtx.putImageData(ditheredData, 0, 0)
-
-            if (ann.shape === "rectangle") {
-              ctx.drawImage(
-                tempCanvas,
-                0,
-                0,
-                ann.width,
-                ann.height,
-                ann.x - ann.width / 2,
-                ann.y - ann.height / 2,
-                ann.width,
-                ann.height,
-              )
-            } else {
-              ctx.drawImage(
-                tempCanvas,
-                0,
-                0,
-                ann.radius * 2,
-                ann.radius * 2,
-                ann.x - ann.radius,
-                ann.y - ann.radius,
-                ann.radius * 2,
-                ann.radius * 2,
-              )
-            }
-          }
-        }
-      } else {
-        // Original magnifier logic
-        if (ann.shape === "rectangle") {
-          const zoomWidth = ann.width / 2 / ann.zoom
-          const zoomHeight = ann.height / 2 / ann.zoom
-          ctx.drawImage(
-            image,
-            sourceX - zoomWidth * scaleX,
-            sourceY - zoomHeight * scaleY,
-            zoomWidth * 2 * scaleX,
-            zoomHeight * 2 * scaleY,
-            ann.x - ann.width / 2,
-            ann.y - ann.height / 2,
-            ann.width,
-            ann.height,
-          )
-        } else {
-          const zoomRadius = ann.radius / ann.zoom
-          ctx.drawImage(
-            image,
-            sourceX - zoomRadius * scaleX,
-            sourceY - zoomRadius * scaleY,
-            zoomRadius * 2 * scaleX,
-            zoomRadius * 2 * scaleY,
-            ann.x - ann.radius,
-            ann.y - ann.radius,
-            ann.radius * 2,
-            ann.radius * 2,
-          )
-        }
-      }
-
-      ctx.restore()
-
-      if (ann.type === "magnifier") {
-        ctx.save()
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          const halfWidth = ann.width / 2 + 1
-          const halfHeight = ann.height / 2 + 1
-          ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, halfWidth * 2, halfHeight * 2, 8)
-        } else {
-          ctx.arc(ann.x, ann.y, ann.radius + 1, 0, Math.PI * 2)
-        }
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          const halfWidth = ann.width / 2 + 1
-          const halfHeight = ann.height / 2 + 1
-          ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, halfWidth * 2, halfHeight * 2, 8)
-        } else {
-          ctx.arc(ann.x, ann.y, ann.radius + 1, 0, Math.PI * 2)
-        }
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1
-        ctx.stroke()
-      }
-
-      if (selectedAnnotation === ann.id) {
-        ctx.save()
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          const halfWidth = ann.width / 2 + 4
-          const halfHeight = ann.height / 2 + 4
-          ctx.roundRect(ann.x - halfWidth, ann.y - halfHeight, halfWidth * 2, halfHeight * 2, 10)
-        } else {
-          ctx.arc(ann.x, ann.y, ann.radius + 4, 0, Math.PI * 2)
-        }
-        ctx.strokeStyle = "#3b82f6"
-        ctx.lineWidth = 2
-        ctx.stroke()
-        ctx.restore()
-
-        let handleX: number, handleY: number
-        if (ann.shape === "rectangle") {
-          handleX = ann.x + ann.width / 2 + 4
-          handleY = ann.y + ann.height / 2 + 4
-        } else {
-          const outlineRadius = ann.radius + 4
-          handleX = ann.x + outlineRadius * Math.cos(Math.PI / 4)
-          handleY = ann.y + outlineRadius * Math.sin(Math.PI / 4)
-        }
-        ctx.beginPath()
-        ctx.arc(handleX, handleY, 8, 0, Math.PI * 2)
-        ctx.fillStyle = "#3b82f6"
-        ctx.fill()
-        ctx.strokeStyle = "#ffffff"
-        ctx.lineWidth = 2
-        ctx.stroke()
-      }
-    })
-  }, [image, annotations, canvasDisplaySize, selectedAnnotation, calculateBlur, calculateDither])
-
-  useEffect(() => {
-    drawCanvas()
-  }, [drawCanvas])
+    renderToCanvas(canvas, canvas.width, canvas.height, canvasDisplaySize.width, canvasDisplaySize.height, true)
+  }, [image, renderToCanvas, canvasDisplaySize])
 
   useEffect(() => {
     if (!image) return
@@ -941,10 +1035,12 @@ export function ImageMagnifierTool() {
       canvas.style.height = `${displayHeight}px`
 
       setCanvasDisplaySize({ width: displayWidth, height: displayHeight })
+
+      renderToCanvas(canvas, canvas.width, canvas.height, displayWidth, displayHeight, true)
     }
 
     requestAnimationFrame(setupCanvas)
-  }, [image])
+  }, [image, renderToCanvas]) // Added renderToCanvas to dependency array
 
   const handleImageUpload = (file: File) => {
     const reader = new FileReader()
@@ -1331,438 +1427,58 @@ export function ImageMagnifierTool() {
   }
 
   const downloadImage = useCallback(async () => {
+    // Added async
     if (!image) return
 
-    const dpr = 2
-    const exportCanvas = document.createElement("canvas")
-    exportCanvas.width = image.naturalWidth * dpr
-    exportCanvas.height = image.naturalHeight * dpr
-    const ctx = exportCanvas.getContext("2d")
-    if (!ctx) return
+    const canvas = document.createElement("canvas")
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight)
-
-    const scaleX = image.naturalWidth / canvasDisplaySize.width
-    const scaleY = image.naturalHeight / canvasDisplaySize.height
-
-    annotations.forEach((ann) => {
-      const scaledX = ann.x * scaleX
-      const scaledY = ann.y * scaleY
-      const scaledRadius = ann.radius * Math.min(scaleX, scaleY)
-      const scaledWidth = ann.width * scaleX
-      const scaledHeight = ann.height * scaleY
-
-      ctx.save()
-      ctx.beginPath()
-      if (ann.shape === "rectangle") {
-        const halfWidth = scaledWidth / 2
-        const halfHeight = scaledHeight / 2
-        ctx.roundRect(
-          scaledX - halfWidth,
-          scaledY - halfHeight,
-          scaledWidth,
-          scaledHeight,
-          8 * Math.min(scaleX, scaleY),
-        )
-      } else {
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-      }
-      ctx.clip()
-
-      if (ann.type === "blur") {
-        const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d")
-        if (tempCtx) {
-          const scaledBlur = Math.round(ann.blurAmount * Math.min(scaleX, scaleY) * dpr)
-          const blurRadius = Math.min(scaledBlur, 254) // Cap at 254 for stackblur table
-          const padding = blurRadius * 2
-
-          if (ann.shape === "rectangle") {
-            const regionWidth = Math.ceil(scaledWidth * dpr)
-            const regionHeight = Math.ceil(scaledHeight * dpr)
-            const paddedWidth = regionWidth + padding * 2
-            const paddedHeight = regionHeight + padding * 2
-            tempCanvas.width = paddedWidth
-            tempCanvas.height = paddedHeight
-
-            const paddingInImage = padding / dpr
-
-            // Use the new helper function
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              scaledX - scaledWidth / 2 - paddingInImage,
-              scaledY - scaledHeight / 2 - paddingInImage,
-              scaledWidth + paddingInImage * 2,
-              scaledHeight + paddingInImage * 2,
-              paddedWidth,
-              paddedHeight,
-            )
-
-            // Apply blur or mosaic based on blurType
-            if (ann.blurType === "mosaic") {
-              applyMosaic(
-                tempCtx.getImageData(0, 0, paddedWidth, paddedHeight),
-                Math.max(4, Math.floor(blurRadius / 2)),
-              )
-              tempCtx.putImageData(tempCtx.getImageData(0, 0, paddedWidth, paddedHeight), 0, 0)
-            } else {
-              stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
-            }
-
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionWidth,
-              regionHeight,
-              scaledX - scaledWidth / 2,
-              scaledY - scaledHeight / 2,
-              scaledWidth,
-              scaledHeight,
-            )
-          } else {
-            const regionSize = Math.ceil(scaledRadius * 2 * dpr)
-            const paddedSize = regionSize + padding * 2
-            tempCanvas.width = paddedSize
-            tempCanvas.height = paddedSize
-
-            const paddingInImage = padding / dpr
-
-            // Use the new helper function
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              scaledX - scaledRadius - paddingInImage,
-              scaledY - scaledRadius - paddingInImage,
-              scaledRadius * 2 + paddingInImage * 2,
-              scaledRadius * 2 + paddingInImage * 2,
-              paddedSize,
-              paddedSize,
-            )
-
-            // Apply blur or mosaic based on blurType
-            if (ann.blurType === "mosaic") {
-              applyMosaic(tempCtx.getImageData(0, 0, paddedSize, paddedSize), Math.max(4, Math.floor(blurRadius / 2)))
-              tempCtx.putImageData(tempCtx.getImageData(0, 0, paddedSize, paddedSize), 0, 0)
-            } else {
-              stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
-            }
-
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionSize,
-              regionSize,
-              scaledX - scaledRadius,
-              scaledY - scaledRadius,
-              scaledRadius * 2,
-              scaledRadius * 2,
-            )
-          }
-        }
-      } else {
-        if (ann.shape === "rectangle") {
-          const zoomWidth = scaledWidth / 2 / ann.zoom
-          const zoomHeight = scaledHeight / 2 / ann.zoom
-          ctx.drawImage(
-            image,
-            scaledX - zoomWidth,
-            scaledY - zoomHeight,
-            zoomWidth * 2,
-            zoomHeight * 2,
-            scaledX - scaledWidth / 2,
-            scaledY - scaledHeight / 2,
-            scaledWidth,
-            scaledHeight,
-          )
-        } else {
-          const zoomRadius = scaledRadius / ann.zoom
-          ctx.drawImage(
-            image,
-            scaledX - zoomRadius,
-            scaledY - zoomRadius,
-            zoomRadius * 2,
-            zoomRadius * 2,
-            scaledX - scaledRadius,
-            scaledY - scaledRadius,
-            scaledRadius * 2,
-            scaledRadius * 2,
-          )
-        }
-      }
-      ctx.restore()
-
-      if (ann.type !== "blur") {
-        ctx.save()
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          ctx.roundRect(
-            scaledX - scaledWidth / 2,
-            scaledY - scaledHeight / 2,
-            scaledWidth,
-            scaledHeight,
-            8 * Math.min(scaleX, scaleY),
-          )
-        } else {
-          ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        }
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          const halfWidth = scaledWidth / 2 + 1
-          const halfHeight = scaledHeight / 2 + 1
-          ctx.roundRect(
-            scaledX - halfWidth,
-            scaledY - halfHeight,
-            halfWidth * 2,
-            halfHeight * 2,
-            8 * Math.min(scaleX, scaleY),
-          )
-        } else {
-          ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
-        }
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1
-        ctx.stroke()
-      }
-    })
+    renderToCanvas(
+      canvas,
+      image.naturalWidth,
+      image.naturalHeight,
+      canvasDisplaySize.width,
+      canvasDisplaySize.height,
+      false,
+    )
 
     const link = document.createElement("a")
     link.download = "magnified-image.png"
-    link.href = exportCanvas.toDataURL("image/png")
+    link.href = canvas.toDataURL("image/png")
     link.click()
-  }, [image, annotations, canvasDisplaySize])
+  }, [image, renderToCanvas, canvasDisplaySize]) // Added canvasDisplaySize
 
   const copyImage = useCallback(async () => {
+    // Added async
     if (!image) return
 
-    const dpr = 2
-    const exportCanvas = document.createElement("canvas")
-    exportCanvas.width = image.naturalWidth * dpr
-    exportCanvas.height = image.naturalHeight * dpr
-    const ctx = exportCanvas.getContext("2d")
-    if (!ctx) return
+    setIsCopying(true)
+    try {
+      const canvas = document.createElement("canvas")
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight)
+      renderToCanvas(
+        canvas,
+        image.naturalWidth,
+        image.naturalHeight,
+        canvasDisplaySize.width,
+        canvasDisplaySize.height,
+        false,
+      )
 
-    const scaleX = image.naturalWidth / canvasDisplaySize.width
-    const scaleY = image.naturalHeight / canvasDisplaySize.height
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
 
-    annotations.forEach((ann) => {
-      const scaledX = ann.x * scaleX
-      const scaledY = ann.y * scaleY
-      const scaledRadius = ann.radius * Math.min(scaleX, scaleY)
-      const scaledWidth = ann.width * scaleX
-      const scaledHeight = ann.height * scaleY
-
-      ctx.save()
-      ctx.beginPath()
-      if (ann.shape === "rectangle") {
-        const halfWidth = scaledWidth / 2
-        const halfHeight = scaledHeight / 2
-        ctx.roundRect(
-          scaledX - halfWidth,
-          scaledY - halfHeight,
-          scaledWidth,
-          scaledHeight,
-          8 * Math.min(scaleX, scaleY),
-        )
-      } else {
-        ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-      }
-      ctx.clip()
-
-      if (ann.type === "blur") {
-        const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d")
-        if (tempCtx) {
-          const scaledBlur = Math.round(ann.blurAmount * Math.min(scaleX, scaleY) * dpr)
-          const blurRadius = Math.min(scaledBlur, 254) // Cap at 254 for stackblur table
-          const padding = blurRadius * 2
-
-          if (ann.shape === "rectangle") {
-            const regionWidth = Math.ceil(scaledWidth * dpr)
-            const regionHeight = Math.ceil(scaledHeight * dpr)
-            const paddedWidth = regionWidth + padding * 2
-            const paddedHeight = regionHeight + padding * 2
-            tempCanvas.width = paddedWidth
-            tempCanvas.height = paddedHeight
-
-            const paddingInImage = padding / dpr
-
-            // Use the new helper function
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              scaledX - scaledWidth / 2 - paddingInImage,
-              scaledY - scaledHeight / 2 - paddingInImage,
-              scaledWidth + paddingInImage * 2,
-              scaledHeight + paddingInImage * 2,
-              paddedWidth,
-              paddedHeight,
-            )
-
-            // Apply blur or mosaic based on blurType
-            if (ann.blurType === "mosaic") {
-              applyMosaic(
-                tempCtx.getImageData(0, 0, paddedWidth, paddedHeight),
-                Math.max(4, Math.floor(blurRadius / 2)),
-              )
-              tempCtx.putImageData(tempCtx.getImageData(0, 0, paddedWidth, paddedHeight), 0, 0)
-            } else {
-              stackBlurCanvas(tempCanvas, 0, 0, paddedWidth, paddedHeight, blurRadius)
-            }
-
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionWidth,
-              regionHeight,
-              scaledX - scaledWidth / 2,
-              scaledY - scaledHeight / 2,
-              scaledWidth,
-              scaledHeight,
-            )
-          } else {
-            const regionSize = Math.ceil(scaledRadius * 2 * dpr)
-            const paddedSize = regionSize + padding * 2
-            tempCanvas.width = paddedSize
-            tempCanvas.height = paddedSize
-
-            const paddingInImage = padding / dpr
-
-            // Use the new helper function
-            drawImageWithEdgeExtension(
-              tempCtx,
-              image,
-              scaledX - scaledRadius - paddingInImage,
-              scaledY - scaledRadius - paddingInImage,
-              scaledRadius * 2 + paddingInImage * 2,
-              scaledRadius * 2 + paddingInImage * 2,
-              paddedSize,
-              paddedSize,
-            )
-
-            // Apply blur or mosaic based on blurType
-            if (ann.blurType === "mosaic") {
-              applyMosaic(tempCtx.getImageData(0, 0, paddedSize, paddedSize), Math.max(4, Math.floor(blurRadius / 2)))
-              tempCtx.putImageData(tempCtx.getImageData(0, 0, paddedSize, paddedSize), 0, 0)
-            } else {
-              stackBlurCanvas(tempCanvas, 0, 0, paddedSize, paddedSize, blurRadius)
-            }
-
-            ctx.drawImage(
-              tempCanvas,
-              padding,
-              padding,
-              regionSize,
-              regionSize,
-              scaledX - scaledRadius,
-              scaledY - scaledRadius,
-              scaledRadius * 2,
-              scaledRadius * 2,
-            )
-          }
-        }
-      } else {
-        if (ann.shape === "rectangle") {
-          const zoomWidth = scaledWidth / 2 / ann.zoom
-          const zoomHeight = scaledHeight / 2 / ann.zoom
-          ctx.drawImage(
-            image,
-            scaledX - zoomWidth,
-            scaledY - zoomHeight,
-            zoomWidth * 2,
-            zoomHeight * 2,
-            scaledX - scaledWidth / 2,
-            scaledY - scaledHeight / 2,
-            scaledWidth,
-            scaledHeight,
-          )
-        } else {
-          const zoomRadius = scaledRadius / ann.zoom
-          ctx.drawImage(
-            image,
-            scaledX - zoomRadius,
-            scaledY - zoomRadius,
-            zoomRadius * 2,
-            zoomRadius * 2,
-            scaledX - scaledRadius,
-            scaledY - scaledRadius,
-            scaledRadius * 2,
-            scaledRadius * 2,
-          )
-        }
-      }
-      ctx.restore()
-
-      if (ann.type !== "blur") {
-        ctx.save()
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          ctx.roundRect(
-            scaledX - scaledWidth / 2,
-            scaledY - scaledHeight / 2,
-            scaledWidth,
-            scaledHeight,
-            8 * Math.min(scaleX, scaleY),
-          )
-        } else {
-          ctx.arc(scaledX, scaledY, scaledRadius, 0, Math.PI * 2)
-        }
-        ctx.shadowColor = "rgba(0, 0, 0, 0.3)"
-        ctx.shadowBlur = 15 * Math.min(scaleX, scaleY)
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 4 * Math.min(scaleX, scaleY)
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)"
-        ctx.lineWidth = 2 * Math.min(scaleX, scaleY)
-        ctx.stroke()
-        ctx.restore()
-
-        ctx.beginPath()
-        if (ann.shape === "rectangle") {
-          const halfWidth = scaledWidth / 2 + 1
-          const halfHeight = scaledHeight / 2 + 1
-          ctx.roundRect(
-            scaledX - halfWidth,
-            scaledY - halfHeight,
-            halfWidth * 2,
-            halfHeight * 2,
-            8 * Math.min(scaleX, scaleY),
-          )
-        } else {
-          ctx.arc(scaledX, scaledY, scaledRadius + 1, 0, Math.PI * 2)
-        }
-        ctx.strokeStyle = ann.darkBorder ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.4)"
-        ctx.lineWidth = 1
-        ctx.stroke()
-      }
-    })
-
-    exportCanvas.toBlob(async (blob) => {
-      if (!blob) return
-      try {
+      if (blob) {
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      } catch {
-        // Clipboard write failed silently
       }
-    }, "image/png")
-  }, [image, annotations, canvasDisplaySize])
+    } catch (error) {
+      console.error("Failed to copy image:", error)
+    } finally {
+      setIsCopying(false)
+    }
+  }, [image, renderToCanvas, canvasDisplaySize]) // Added canvasDisplaySize
 
   const getAnnotationScreenPosition = (ann: Annotation) => {
     const canvas = canvasRef.current
@@ -1898,10 +1614,16 @@ export function ImageMagnifierTool() {
                     variant="ghost"
                     className="h-8 w-8 rounded-full hover:bg-black/10"
                   >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {isCopying ? (
+                      <Check className="h-4 w-4" />
+                    ) : copied ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{copied ? "Copied!" : "Copy Image"}</TooltipContent>
+                <TooltipContent>{isCopying ? "Copying..." : copied ? "Copied!" : "Copy Image"}</TooltipContent>
               </Tooltip>
 
               <Tooltip>
