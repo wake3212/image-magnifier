@@ -715,11 +715,12 @@ export function ImageMagnifierTool() {
       // Scale factor from display coordinates to target coordinates
       const scale = targetWidth / displayWidth
 
-      ctx.clearRect(0, 0, targetWidth, targetHeight)
-      ctx.drawImage(image, 0, 0, targetWidth, targetHeight)
-
       const scaleX = image.naturalWidth / displayWidth
       const scaleY = image.naturalHeight / displayHeight
+      const effectScale = Math.min(scaleX, scaleY)
+
+      ctx.clearRect(0, 0, targetWidth, targetHeight)
+      ctx.drawImage(image, 0, 0, targetWidth, targetHeight)
 
       annotations.forEach((ann) => {
         ctx.save()
@@ -745,7 +746,7 @@ export function ImageMagnifierTool() {
         const sourceY = ann.y * scaleY
 
         if (ann.type === "blur") {
-          const blurRadius = Math.min(Math.round(ann.blurAmount * scale), 40 * scale)
+          const blurRadius = Math.min(Math.round(ann.blurAmount * effectScale), 40 * effectScale)
           const padding = blurRadius * 2
 
           const tempCanvas = document.createElement("canvas")
@@ -770,7 +771,7 @@ export function ImageMagnifierTool() {
               const imageData = tempCtx.getImageData(0, 0, paddedWidth, paddedHeight)
 
               if (ann.blurType === "mosaic") {
-                applyMosaic(imageData, Math.max(8 * scale, Math.floor(blurRadius / 2)))
+                applyMosaic(imageData, Math.max(8 * effectScale, Math.floor(blurRadius / 2)))
               } else {
                 applyGaussianBlur(imageData, blurRadius)
               }
@@ -804,7 +805,7 @@ export function ImageMagnifierTool() {
               const imageData = tempCtx.getImageData(0, 0, paddedSize, paddedSize)
 
               if (ann.blurType === "mosaic") {
-                applyMosaic(imageData, Math.max(8 * scale, Math.floor(blurRadius / 2)))
+                applyMosaic(imageData, Math.max(8 * effectScale, Math.floor(blurRadius / 2)))
               } else {
                 applyGaussianBlur(imageData, blurRadius)
               }
@@ -824,6 +825,8 @@ export function ImageMagnifierTool() {
             }
           }
         } else if (ann.type === "dither") {
+          const ditherScaleFactor = ann.ditherScale * effectScale
+
           const tempCanvas = document.createElement("canvas")
           const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true })
           if (tempCtx) {
@@ -842,9 +845,9 @@ export function ImageMagnifierTool() {
               tempCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, regionWidth, regionHeight)
 
               const imageData = tempCtx.getImageData(0, 0, regionWidth, regionHeight)
-              applyDither(imageData, ann.ditherMethod, ann.ditherScale, ann.ditherColorMode)
-
+              applyDither(imageData, ann.ditherMethod, ditherScaleFactor, ann.ditherColorMode)
               tempCtx.putImageData(imageData, 0, 0)
+
               ctx.drawImage(
                 tempCanvas,
                 0,
@@ -870,7 +873,7 @@ export function ImageMagnifierTool() {
               tempCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, diameter, diameter)
 
               const imageData = tempCtx.getImageData(0, 0, diameter, diameter)
-              applyDither(imageData, ann.ditherMethod, ann.ditherScale, ann.ditherColorMode)
+              applyDither(imageData, ann.ditherMethod, ditherScaleFactor, ann.ditherColorMode)
 
               tempCtx.putImageData(imageData, 0, 0)
               ctx.drawImage(
